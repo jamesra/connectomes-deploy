@@ -46,7 +46,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'StackLib.ps1')
+. (Join-Path $PSScriptRoot 'lib' 'StackLib.ps1')
 
 $From = Get-DockerHostRoot -Root $From
 if (-not $To) { $To = $From }

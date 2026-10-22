@@ -5,8 +5,10 @@
 
 .DESCRIPTION
   Solves "every service starts differently, and remote deploys are manual": stack.ps1 reads
-  the stack registries (nornir-docker/deploy/stacks.psd1 and <Viking>/deploy/stacks.psd1),
-  merges the machine-local env files from the host layout, and runs the right engine:
+  the stack registries (this repo's stacks.psd1, plus the source-repo registries named by
+  STACK_EXTRA_REGISTRIES in host.env, by default <Viking>/deploy/stacks.psd1 and
+  <nornir>/nornir-docker/dev-stacks.psd1), merges the machine-local env files from the host
+  layout, and runs the right engine:
 
     compose stacks  docker compose -p <stack> --env-file host.env ... --env-file <stack>.run.env -f ...
     script stacks   the existing launcher (start-nornir-build.ps1, start-dashboard.ps1, ...)
@@ -111,8 +113,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'StackLib.ps1')
-. (Join-Path $PSScriptRoot 'DockerHostCerts.ps1')
+. (Join-Path $PSScriptRoot 'lib' 'StackLib.ps1')
+. (Join-Path $PSScriptRoot 'lib' 'DockerHostCerts.ps1')
 
 $script:Layout = Get-DockerHostLayout -Root $Root
 $script:HostEnv = Read-HostEnv -Root $Root
@@ -196,7 +198,7 @@ function Send-ImagesToTarget {
 function Invoke-OnTargets {
     $targets = Import-DockerTargets -Root $Root
     if (-not $targets.Count) {
-        throw "No targets defined. Copy examples/example.targets.psd1 to $($script:Layout.Targets)."
+        throw "No targets defined. Copy host/example.targets.psd1 to $($script:Layout.Targets)."
     }
     $names = if ($Target -eq 'all') { @($targets.Keys | Sort-Object) } else { @($Target -split ',') }
     $worst = 0
@@ -256,8 +258,9 @@ function Get-Entry {
     param([string]$Key)
     $e = $script:Registry[$Key]
     if (-not $e) {
-        throw "Unknown stack '$Key'. Known: $(($script:Registry.Keys) -join ', '). (Viking stacks need VIKING_REPO_ROOT_HOST in host.env.)"
+        throw "Unknown stack '$Key'. Known: $(($script:Registry.Keys) -join ', '). (Viking stacks need VIKING_REPO_ROOT_HOST in host.env; see also STACK_EXTRA_REGISTRIES.)"
     }
+    if (-not $e.RepoRoot) { throw "Stack '$Key' runs from the $($e.RepoRootVar) checkout; set $($e.RepoRootVar) in host.env." }
     return $e
 }
 
@@ -490,7 +493,7 @@ function Invoke-Doctor {
         $p = $script:Layout[$d]
         if (Test-Path -LiteralPath $p) { Write-Check OK "$d/ exists" } else { Write-Check FAIL "$p missing (run Initialize-DockerHost.ps1)" }
     }
-    if (Test-Path -LiteralPath $script:Layout.HostEnv) { Write-Check OK "host.env present" } else { Write-Check FAIL "$($script:Layout.HostEnv) missing (copy examples/example.host.env)" }
+    if (Test-Path -LiteralPath $script:Layout.HostEnv) { Write-Check OK "host.env present" } else { Write-Check FAIL "$($script:Layout.HostEnv) missing (copy host/example.host.env)" }
 
     $dv = $null
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -515,7 +518,7 @@ function Invoke-Doctor {
         $envMap = Get-StackEnvironment -Entry $e -Root $Root
         $problems = Test-StackRequired -Entry $e -Env $envMap -Root $Root
         if ($problems.Count) { foreach ($p in $problems) { Write-Check FAIL "[$k] $p" } } else { Write-Check OK "[$k] configuration complete" }
-        if ($e.Engine -eq 'compose' -and $dv) {
+        if ($e.Engine -eq 'compose' -and $dv -and $e.RepoRoot) {
             $base = Get-StackComposeBaseArgs -Entry $e -ExtraProfiles $Profile -Root $Root
             Push-Location $e.RepoRoot
             try {
@@ -524,7 +527,7 @@ function Invoke-Doctor {
             }
             finally { Pop-Location }
         }
-        if ($e.Script) {
+        if ($e.Script -and $e.RepoRoot) {
             $sp = Join-DockerHostPath $e.RepoRoot $e.Script
             if (Test-Path -LiteralPath $sp) { Write-Check OK "[$k] launcher $($e.Script)" } else { Write-Check FAIL "[$k] launcher missing: $sp" }
         }
@@ -545,7 +548,7 @@ function Invoke-Doctor {
     }
 
     if ($needsTls) {
-        $envMap = Get-StackEnvironment -Entry (Get-Entry $stacks[0]) -Root $Root
+        $envMap = Get-StackEnvironment -Entry $script:Registry[@($stacks | Where-Object { $script:Registry.Contains($_) })[0]] -Root $Root
         $names = @((Get-VikingHostnameDefaults -Env $envMap).Values)
         foreach ($c in (Test-DockerHostCertificate -CertsDir $script:Layout.Certs -CertName $envMap['TLS_CERT_NAME'] -Hostnames $names)) {
             Write-Check $c.Status $c.Message

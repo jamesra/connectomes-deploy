@@ -6,13 +6,14 @@
 #   Docker Engine + compose plugin (Docker's apt repo; falls back to Ubuntu's docker.io + docker-compose-v2)
 #   PowerShell 7 (Microsoft apt repo; falls back to snap, then the GitHub tarball)
 #   NVIDIA container toolkit (only with --gpu, or when nvidia-smi is present)
-# and prepares /srv/docker (layout root) and /srv/src (git checkouts) owned by the deploy user.
+# and prepares /srv/docker (layout root), /srv/connectomes-deploy (this repo) and /srv/src (source
+# checkouts, still needed by stacks whose images are not published yet) owned by the deploy user.
 #
 # Safe to re-run. It never disables SSH password login unless --harden-ssh is given AND the deploy
 # user already has ~/.ssh/authorized_keys (so you cannot lock yourself out).
 #
 # Usage (as a sudo-capable user, e.g. the account you deploy as):
-#   curl -fsSL https://raw.githubusercontent.com/jamesra/nornir-docker/main/deploy/bootstrap-ubuntu.sh -o bootstrap-ubuntu.sh
+#   curl -fsSL https://raw.githubusercontent.com/jamesra/connectomes-deploy/main/bootstrap-ubuntu.sh -o bootstrap-ubuntu.sh
 #   sudo bash bootstrap-ubuntu.sh --user deploy [--gpu] [--open-web] [--harden-ssh]
 #
 #   --user NAME     deploy user (default: $SUDO_USER)
@@ -27,6 +28,7 @@ WANT_GPU=0
 OPEN_WEB=0
 HARDEN_SSH=0
 LAYOUT_ROOT=/srv/docker
+DEPLOY_ROOT=/srv/connectomes-deploy
 SRC_ROOT=/srv/src
 PWSH_VERSION="${PWSH_VERSION:-7.4.6}"
 
@@ -37,7 +39,7 @@ while [[ $# -gt 0 ]]; do
     --open-web) OPEN_WEB=1; shift ;;
     --harden-ssh) HARDEN_SSH=1; shift ;;
     --root) LAYOUT_ROOT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -114,8 +116,8 @@ if [[ $WANT_GPU -eq 1 ]] || command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 echo "== layout folders"
-mkdir -p "$LAYOUT_ROOT" "$SRC_ROOT"
-chown "$DEPLOY_USER":"$DEPLOY_USER" "$LAYOUT_ROOT" "$SRC_ROOT"
+mkdir -p "$LAYOUT_ROOT" "$DEPLOY_ROOT" "$SRC_ROOT"
+chown "$DEPLOY_USER":"$DEPLOY_USER" "$LAYOUT_ROOT" "$DEPLOY_ROOT" "$SRC_ROOT"
 
 echo "== firewall (ufw)"
 ufw allow OpenSSH
@@ -145,7 +147,10 @@ fi
 cat <<EOF
 
 Done. Log out and back in (docker group), then as $DEPLOY_USER:
-  git clone --recurse-submodules https://github.com/jamesra/nornir.git $SRC_ROOT/nornir
+  git clone https://github.com/jamesra/connectomes-deploy.git $DEPLOY_ROOT
+  # Source checkouts, until every image is published:
+  git clone --recurse-submodules https://github.com/jamesra/nornir.git $SRC_ROOT/nornir     # compute host
   git clone --recurse-submodules https://github.com/jamesra/Viking.git $SRC_ROOT/Viking     # Viking hosts
-  pwsh $SRC_ROOT/nornir/nornir-docker/deploy/Initialize-DockerHost.ps1 -Root $LAYOUT_ROOT -Role <compute|web> -VikingRepoRoot $SRC_ROOT/Viking -SetUserEnv
+  pwsh $DEPLOY_ROOT/Initialize-DockerHost.ps1 -Root $LAYOUT_ROOT -Role <compute|web> -NornirRepoRoot $SRC_ROOT/nornir -VikingRepoRoot $SRC_ROOT/Viking -SetUserEnv
+  (web host: omit -NornirRepoRoot)
 EOF

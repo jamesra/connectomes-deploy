@@ -7,8 +7,8 @@
   Replaces Initialize-NornirBuildAppliance.ps1 and windows-docker-layout/Initialize-NornirCursorWorkerLayout.ps1
   so the dev box, the compute server and the web server all get the same tree:
 
-    <root>/stack.ps1                       forwarding launcher -> <repo>/nornir-docker/deploy/stack.ps1
-    <root>/Run/_host/host.env              machine settings (copied from examples/example.host.env)
+    <root>/stack.ps1                       forwarding launcher -> <DEPLOY_REPO_ROOT_HOST>/stack.ps1
+    <root>/Run/_host/host.env              machine settings (copied from host/example.host.env)
     <root>/Run/_host/secrets/secrets.env   machine-wide secrets (GITHUB_TOKEN, ...)
     <root>/Run/_host/targets.psd1          remote targets (dev box only; -WithTargets)
     <root>/Run/<stack>/<stack>.run.env     per-stack settings (from each stack's Example)
@@ -28,35 +28,39 @@
 .PARAMETER Stacks
   Explicit stacks this host runs (written to host.env when that key is empty).
 
-.PARAMETER RepoRoot
-  nornir monorepo checkout on this host. Default: the checkout containing this script.
+.PARAMETER NornirRepoRoot
+  nornir monorepo checkout on this host (needed for nornir-* stacks until their images are
+  published). Default: NORNIR_REPO_ROOT_HOST from the environment or an existing host.env.
+  -RepoRoot is accepted as an alias.
 
 .PARAMETER VikingRepoRoot
-  Viking checkout on this host (needed for viking-* stacks).
+  Viking checkout on this host (needed for viking-* stacks until they move into this repo).
+  Default: VIKING_REPO_ROOT_HOST from the environment or an existing host.env.
 
 .PARAMETER WithTargets
   Also copy example.targets.psd1 (use on the machine you deploy from).
 
 .PARAMETER SetUserEnv
-  Persist NORNIR_DOCKER_USER_ROOT and NORNIR_REPO_ROOT_HOST (Windows user env, or ~/.profile on Linux).
+  Persist NORNIR_DOCKER_USER_ROOT, DEPLOY_REPO_ROOT_HOST and NORNIR_REPO_ROOT_HOST (Windows user env,
+  or ~/.profile on Linux).
 
 .PARAMETER SkipDoctor
   Do not run `stack.ps1 doctor` at the end.
 
 .EXAMPLE
   # Ubuntu compute server (after bootstrap-ubuntu.sh)
-  pwsh /srv/src/nornir/nornir-docker/deploy/Initialize-DockerHost.ps1 -Role compute -VikingRepoRoot /srv/src/Viking -SetUserEnv
+  pwsh /srv/connectomes-deploy/Initialize-DockerHost.ps1 -Role compute -NornirRepoRoot /srv/src/nornir -VikingRepoRoot /srv/src/Viking -SetUserEnv
 
 .EXAMPLE
   # Windows dev box that deploys to the servers
-  .\nornir-docker\deploy\Initialize-DockerHost.ps1 -Role dev -VikingRepoRoot D:\src\git\Viking -WithTargets -SetUserEnv
+  D:\src\git\connectomes-deploy\Initialize-DockerHost.ps1 -Role dev -NornirRepoRoot D:\src\git\nornir -VikingRepoRoot D:\src\git\Viking -WithTargets -SetUserEnv
 #>
 [CmdletBinding()]
 param(
     [string]$Root = '',
     [ValidateSet('compute', 'web', 'iis', 'dev')][string]$Role = 'dev',
     [string[]]$Stacks = @(),
-    [string]$RepoRoot = '',
+    [Alias('RepoRoot')][string]$NornirRepoRoot = '',
     [string]$VikingRepoRoot = '',
     [switch]$WithTargets,
     [switch]$SetUserEnv,
@@ -64,7 +68,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'StackLib.ps1')
+. (Join-Path $PSScriptRoot 'lib' 'StackLib.ps1')
 
 $RolePresets = @{
     compute = @('nornir-build', 'nornir-dashboard', 'viking-segmentation')
@@ -74,10 +78,13 @@ $RolePresets = @{
 }
 
 $layout = Get-DockerHostLayout -Root $Root
-if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
-$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).ProviderPath
+$DeployRoot = (Resolve-Path -LiteralPath $PSScriptRoot).ProviderPath
+$existingHostEnv = Read-HostEnv -Root $layout.Root
+if (-not $NornirRepoRoot) { $NornirRepoRoot = Get-RepoRootFromEnv -VarName 'NORNIR_REPO_ROOT_HOST' -HostEnv $existingHostEnv }
+if (-not $VikingRepoRoot) { $VikingRepoRoot = Get-RepoRootFromEnv -VarName 'VIKING_REPO_ROOT_HOST' -HostEnv $existingHostEnv }
+if ($NornirRepoRoot) { $NornirRepoRoot = (Resolve-Path -LiteralPath $NornirRepoRoot).ProviderPath }
 if ($VikingRepoRoot) { $VikingRepoRoot = (Resolve-Path -LiteralPath $VikingRepoRoot).ProviderPath }
-$examples = Join-Path $PSScriptRoot 'examples'
+$hostTemplates = Join-Path $DeployRoot 'host'
 $isWin = Test-NornirWindowsHost
 if (-not $Stacks.Count) { $Stacks = $RolePresets[$Role] }
 $Stacks = @($Stacks -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -126,7 +133,7 @@ function Write-ForwardingLauncher {
       Replaces copies of repo scripts (which broke because they dot-source sibling helpers).
       An existing non-generated file is kept as <name>.bak.
     #>
-    param([string]$Path, [string]$RepoRelative)
+    param([string]$Path, [string]$RepoVar, [string]$RepoFallback, [string]$RepoRelative)
     $marker = '# generated-by: Initialize-DockerHost.ps1'
     if (Test-Path -LiteralPath $Path) {
         $existing = Get-Item -LiteralPath $Path -Force
@@ -143,23 +150,23 @@ function Write-ForwardingLauncher {
     $parentFull = (Resolve-Path -LiteralPath (Split-Path -Parent $Path)).ProviderPath.TrimEnd([char[]]'\/')
     $rootFull = (Resolve-Path -LiteralPath $layout.Root).ProviderPath.TrimEnd([char[]]'\/')
     $up = if ($parentFull -ne $rootFull) { "Join-Path (Join-Path `$PSScriptRoot '..') '..'" } else { '$PSScriptRoot' }
-    $fallback = $RepoRoot -replace "'", "''"
+    $fallback = $RepoFallback -replace "'", "''"
     $content = @"
 $marker
-# Forwards to <NORNIR_REPO_ROOT_HOST>/$rel so this launcher survives git pulls on any OS.
+# Forwards to <$RepoVar>/$rel so this launcher survives git pulls on any OS.
 `$layoutRoot = $up
-`$repo = `$env:NORNIR_REPO_ROOT_HOST
+`$repo = `$env:$RepoVar
 if (-not `$repo) {
     `$f = Join-Path (Join-Path (Join-Path `$layoutRoot 'Run') '_host') 'host.env'
     if (Test-Path -LiteralPath `$f) {
-        `$m = Select-String -LiteralPath `$f -Pattern '^\s*NORNIR_REPO_ROOT_HOST\s*=\s*(.+?)\s*$' | Select-Object -First 1
+        `$m = Select-String -LiteralPath `$f -Pattern '^\s*$RepoVar\s*=\s*(.+?)\s*$' | Select-Object -First 1
         if (`$m) { `$repo = `$m.Matches[0].Groups[1].Value.Trim('"', "'") }
     }
 }
 if (-not `$repo) { `$repo = '$fallback' }
 if (-not `$env:NORNIR_DOCKER_USER_ROOT) { `$env:NORNIR_DOCKER_USER_ROOT = (Resolve-Path -LiteralPath `$layoutRoot).ProviderPath }
 `$target = Join-Path `$repo '$rel'
-if (-not (Test-Path -LiteralPath `$target)) { Write-Error "Not found: `$target (set NORNIR_REPO_ROOT_HOST in Run/_host/host.env)"; exit 1 }
+if (-not (Test-Path -LiteralPath `$target)) { Write-Error "Not found: `$target (set $RepoVar in Run/_host/host.env)"; exit 1 }
 & `$target @args
 exit `$LASTEXITCODE
 "@
@@ -172,7 +179,10 @@ Write-Host 'Directories:'
 New-Dir $layout.Root
 foreach ($d in @($layout.HostDir, $layout.Run, $layout.Builds, $layout.Data, $layout.Certs, $layout.Work, $layout.Logs)) { New-Dir $d }
 New-Dir (Join-DockerHostPath $layout.HostDir 'secrets') -Private
-$hostEnvMap = @{ NORNIR_REPO_ROOT_HOST = $RepoRoot; VIKING_REPO_ROOT_HOST = $VikingRepoRoot }
+$hostEnvMap = @{} + $existingHostEnv
+$hostEnvMap.DEPLOY_REPO_ROOT_HOST = $DeployRoot
+$hostEnvMap.NORNIR_REPO_ROOT_HOST = $NornirRepoRoot
+$hostEnvMap.VIKING_REPO_ROOT_HOST = $VikingRepoRoot
 $registry = Import-StackRegistry -HostEnv $hostEnvMap
 foreach ($s in $Stacks) {
     $d = Get-StackDirs -Stack $s -Root $layout.Root
@@ -183,13 +193,14 @@ foreach ($s in $Stacks) {
 }
 
 Write-Host 'Host files:'
-Copy-IfMissing (Join-Path $examples 'example.host.env') $layout.HostEnv
-Copy-IfMissing (Join-Path $examples 'example.host.secrets.env') $layout.HostSecretsEnv -Private
+Copy-IfMissing (Join-Path $hostTemplates 'example.host.env') $layout.HostEnv
+Copy-IfMissing (Join-Path $hostTemplates 'example.host.secrets.env') $layout.HostSecretsEnv -Private
 Set-EnvFileDefault $layout.HostEnv 'NORNIR_DOCKER_USER_ROOT' $layout.Root
-Set-EnvFileDefault $layout.HostEnv 'NORNIR_REPO_ROOT_HOST' $RepoRoot
+Set-EnvFileDefault $layout.HostEnv 'DEPLOY_REPO_ROOT_HOST' $DeployRoot
+Set-EnvFileDefault $layout.HostEnv 'NORNIR_REPO_ROOT_HOST' $NornirRepoRoot
 Set-EnvFileDefault $layout.HostEnv 'VIKING_REPO_ROOT_HOST' $VikingRepoRoot
 Set-EnvFileDefault $layout.HostEnv 'NORNIR_DOCKER_HOST_STACKS' ($Stacks -join ',')
-if ($WithTargets -or $Role -eq 'dev') { Copy-IfMissing (Join-Path $examples 'example.targets.psd1') $layout.Targets }
+if ($WithTargets -or $Role -eq 'dev') { Copy-IfMissing (Join-Path $hostTemplates 'example.targets.psd1') $layout.Targets }
 
 Write-Host 'Stack files:'
 foreach ($s in $Stacks) {
@@ -198,45 +209,47 @@ foreach ($s in $Stacks) {
         Write-Warning "  stack '$s' not in any registry (Viking stacks need -VikingRepoRoot)"
         continue
     }
+    if (-not $e.RepoRoot) { Write-Warning "  stack '$s' runs from the $($e.RepoRootVar) checkout; set it in host.env" }
     $d = Get-StackDirs -Stack $s -Root $layout.Root
-    if ($e.Example) { Copy-IfMissing (Join-DockerHostPath $e.RepoRoot $e.Example) $d.RunEnv }
+    if ($e.Example) { Copy-IfMissing (Join-DockerHostPath $e.RegistryRoot $e.Example) $d.RunEnv }
     foreach ($sx in @($e.SecretExamples)) {
-        if ($sx) { Copy-IfMissing (Join-DockerHostPath $e.RepoRoot $sx.From) (Join-DockerHostPath $d.Secrets $sx.To) -Private }
+        if ($sx) { Copy-IfMissing (Join-DockerHostPath $e.RegistryRoot $sx.From) (Join-DockerHostPath $d.Secrets $sx.To) -Private }
     }
 }
 if ($Stacks -contains 'nornir-build') {
     $net = Join-DockerHostPath $layout.Run 'nornir-net-mounts'
     New-Dir (Join-DockerHostPath $net 'net-mounts')
     New-Dir (Join-DockerHostPath $net 'secrets' 'net-creds') -Private
-    Copy-IfMissing (Join-DockerHostPath $RepoRoot 'nornir-docker/dev/example.nas-mounts.tsv') (Join-DockerHostPath $net 'net-mounts' 'nas-mounts.tsv')
-    Copy-IfMissing (Join-DockerHostPath $RepoRoot 'nornir-docker/example.nornir-net-mounts.run.env') (Join-DockerHostPath $net '.run.nornir-net-mounts.env')
-    Copy-IfMissing (Join-DockerHostPath $examples 'example.net-creds.cred') (Join-DockerHostPath $net 'secrets' 'net-creds' 'storage.cred') -Private
+    if ($NornirRepoRoot) {
+        Copy-IfMissing (Join-DockerHostPath $NornirRepoRoot 'nornir-docker/dev/example.nas-mounts.tsv') (Join-DockerHostPath $net 'net-mounts' 'nas-mounts.tsv')
+        Copy-IfMissing (Join-DockerHostPath $NornirRepoRoot 'nornir-docker/example.nornir-net-mounts.run.env') (Join-DockerHostPath $net '.run.nornir-net-mounts.env')
+    }
+    else { Write-Warning '  nornir-build net-mount templates come from the nornir checkout; pass -NornirRepoRoot' }
+    Copy-IfMissing (Join-DockerHostPath $DeployRoot 'stacks/nornir-build/example.net-creds.cred') (Join-DockerHostPath $net 'secrets' 'net-creds' 'storage.cred') -Private
 }
 
 Write-Host 'Launchers:'
-Write-ForwardingLauncher -Path (Join-DockerHostPath $layout.Root 'stack.ps1') -RepoRelative 'nornir-docker/deploy/stack.ps1'
+Write-ForwardingLauncher -Path (Join-DockerHostPath $layout.Root 'stack.ps1') -RepoVar 'DEPLOY_REPO_ROOT_HOST' -RepoFallback $DeployRoot -RepoRelative 'stack.ps1'
 $legacyBuild = Join-DockerHostPath $layout.Builds 'nornir-build'
-if ((Test-Path -LiteralPath $legacyBuild) -or $Stacks -contains 'nornir-build') {
+if ($NornirRepoRoot -and ((Test-Path -LiteralPath $legacyBuild) -or $Stacks -contains 'nornir-build')) {
     New-Dir $legacyBuild
-    Write-ForwardingLauncher -Path (Join-DockerHostPath $legacyBuild 'start-nornir-build.ps1') -RepoRelative 'nornir-docker/start-nornir-build.ps1'
-    Write-ForwardingLauncher -Path (Join-DockerHostPath $legacyBuild 'start-dashboard.ps1') -RepoRelative 'nornir-docker/start-dashboard.ps1'
+    Write-ForwardingLauncher -Path (Join-DockerHostPath $legacyBuild 'start-nornir-build.ps1') -RepoVar 'NORNIR_REPO_ROOT_HOST' -RepoFallback $NornirRepoRoot -RepoRelative 'nornir-docker/start-nornir-build.ps1'
+    Write-ForwardingLauncher -Path (Join-DockerHostPath $legacyBuild 'start-dashboard.ps1') -RepoVar 'NORNIR_REPO_ROOT_HOST' -RepoFallback $NornirRepoRoot -RepoRelative 'nornir-docker/start-dashboard.ps1'
 }
 
 if ($SetUserEnv) {
     Write-Host 'Environment:'
+    $userEnv = [ordered]@{ NORNIR_DOCKER_USER_ROOT = $layout.Root; DEPLOY_REPO_ROOT_HOST = $DeployRoot }
+    if ($NornirRepoRoot) { $userEnv.NORNIR_REPO_ROOT_HOST = $NornirRepoRoot }
     if ($isWin) {
-        [Environment]::SetEnvironmentVariable('NORNIR_DOCKER_USER_ROOT', $layout.Root, 'User')
-        [Environment]::SetEnvironmentVariable('NORNIR_REPO_ROOT_HOST', $RepoRoot, 'User')
-        Write-Host '  set user env NORNIR_DOCKER_USER_ROOT, NORNIR_REPO_ROOT_HOST (new shells)'
+        foreach ($k in $userEnv.Keys) { [Environment]::SetEnvironmentVariable($k, $userEnv[$k], 'User') }
+        Write-Host "  set user env $($userEnv.Keys -join ', ') (new shells)"
     }
     else {
         $profileFile = Join-Path $HOME '.profile'
-        $block = @(
-            '# nornir docker host (Initialize-DockerHost.ps1)',
-            "export NORNIR_DOCKER_USER_ROOT='$($layout.Root)'",
-            "export NORNIR_REPO_ROOT_HOST='$RepoRoot'",
-            "alias stack='pwsh -NoLogo -NoProfile -File $($layout.Root)/stack.ps1'"
-        )
+        $block = @('# nornir docker host (Initialize-DockerHost.ps1)') +
+            @($userEnv.Keys | ForEach-Object { "export $_='$($userEnv[$_])'" }) +
+            @("alias stack='pwsh -NoLogo -NoProfile -File $($layout.Root)/stack.ps1'")
         $existing = if (Test-Path $profileFile) { Get-Content $profileFile -Raw } else { '' }
         if ($existing -notmatch 'Initialize-DockerHost\.ps1') {
             Add-Content -LiteralPath $profileFile -Value ($block -join "`n")
@@ -246,7 +259,8 @@ if ($SetUserEnv) {
     }
 }
 $env:NORNIR_DOCKER_USER_ROOT = $layout.Root
-$env:NORNIR_REPO_ROOT_HOST = $RepoRoot
+$env:DEPLOY_REPO_ROOT_HOST = $DeployRoot
+if ($NornirRepoRoot) { $env:NORNIR_REPO_ROOT_HOST = $NornirRepoRoot }
 
 Write-Host ''
 Write-Host 'Next:' -ForegroundColor Cyan

@@ -3,7 +3,7 @@
   Shared helpers for stack.ps1: host layout, stack registries, env merging, compose/ssh invocation.
 
 .DESCRIPTION
-  Dot-sourced by stack.ps1, Initialize-DockerHost.ps1, and DockerHostCerts.ps1. Written for
+  Dot-sourced by stack.ps1, Initialize-DockerHost.ps1, and Move-DockerHostLayout.ps1. Written for
   PowerShell 7 on Windows and Ubuntu: paths are built with Join-Path segments (never literal
   backslashes) and OS-specific behaviour branches on Test-NornirWindowsHost.
 
@@ -12,7 +12,17 @@
     Builds/<stack>/, Data/<stack>/, Certs/<cert-name>/, Work/, Logs/<stack>/
 #>
 
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'NornirDotEnv.ps1')
+. (Join-Path $PSScriptRoot 'DotEnv.ps1')
+
+# This file lives in <connectomes-deploy>/lib.
+$script:DeployRepoRoot = Split-Path -Parent $PSScriptRoot
+
+# Source-repo registries loaded when STACK_EXTRA_REGISTRIES is not set in host.env.
+# Entries are <RepoRootVar>:<registry path relative to that repo>; missing files are skipped.
+$script:DefaultExtraRegistries = @(
+    'VIKING_REPO_ROOT_HOST:deploy/stacks.psd1',
+    'NORNIR_REPO_ROOT_HOST:nornir-docker/dev-stacks.psd1'
+)
 
 function Test-NornirWindowsHost {
     return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
@@ -113,6 +123,10 @@ function Get-RepoRootFromEnv {
     <#
     .SYNOPSIS
       Resolve a repo root from process env, then host.env, with legacy fallbacks.
+
+    .DESCRIPTION
+      DEPLOY_REPO_ROOT_HOST falls back to this checkout. Source repos (NORNIR_REPO_ROOT_HOST,
+      VIKING_REPO_ROOT_HOST) have no fallback: a host without that checkout returns $null.
     #>
     param(
         [Parameter(Mandatory)][string]$VarName,
@@ -120,7 +134,6 @@ function Get-RepoRootFromEnv {
     )
     $legacy = @{
         'NORNIR_REPO_ROOT_HOST' = @('NORNIR_MONOREPO_ROOT')
-        'VIKING_REPO_ROOT_HOST' = @()
     }
     $names = @($VarName) + @($legacy[$VarName] | Where-Object { $_ })
     foreach ($n in $names) {
@@ -131,42 +144,65 @@ function Get-RepoRootFromEnv {
             return $v.Trim()
         }
     }
-    if ($VarName -eq 'NORNIR_REPO_ROOT_HOST') {
-        # This file lives in <repo>/nornir-docker/deploy.
-        return (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
-    }
+    if ($VarName -eq 'DEPLOY_REPO_ROOT_HOST') { return $script:DeployRepoRoot }
     return $null
+}
+
+function Get-StackRegistrySources {
+    <#
+    .SYNOPSIS
+      The registry files to load: this repo's stacks.psd1, then STACK_EXTRA_REGISTRIES (or the defaults).
+
+    .DESCRIPTION
+      STACK_EXTRA_REGISTRIES is a comma list of <RepoRootVar>:<path relative to that repo>, e.g.
+      VIKING_REPO_ROOT_HOST:deploy/stacks.psd1. Set it to `none` to load only this repo's registry.
+    #>
+    param([hashtable]$HostEnv = @{})
+    $sources = [System.Collections.Generic.List[hashtable]]::new()
+    $sources.Add(@{ Var = 'DEPLOY_REPO_ROOT_HOST'; Rel = 'stacks.psd1' })
+    $raw = $HostEnv['STACK_EXTRA_REGISTRIES']
+    $extra = if ([string]::IsNullOrWhiteSpace($raw)) { $script:DefaultExtraRegistries }
+    elseif ($raw.Trim() -eq 'none') { @() }
+    else { @($raw -split '[,\s]+' | Where-Object { $_ }) }
+    foreach ($x in $extra) {
+        $var, $rel = $x -split ':', 2
+        if (-not $rel) { Write-Warning "STACK_EXTRA_REGISTRIES entry '$x' is not <RepoRootVar>:<path>; skipped"; continue }
+        $sources.Add(@{ Var = $var.Trim(); Rel = $rel.Trim() })
+    }
+    return , $sources.ToArray()
 }
 
 function Import-StackRegistry {
     <#
     .SYNOPSIS
-      Load nornir-docker/deploy/stacks.psd1 plus Viking/deploy/stacks.psd1 (when present).
+      Load this repo's stacks.psd1 plus the source-repo registries named by STACK_EXTRA_REGISTRIES.
+
+    .DESCRIPTION
+      Each entry gains:
+        RegistryRoot  repo that holds the registry file; Example / SecretExamples resolve here
+        RepoRootVar   repo the entry's Script / ComposeFiles / Deploy live in (default: the registry's repo)
+        RepoRoot      that repo's path on this host, or $null when the variable is not set
+        RegistryPath  the registry file
 
     .OUTPUTS
-      Ordered hashtable stack-key -> entry; each entry gains RepoRoot and RegistryPath.
+      Ordered hashtable stack-key -> entry.
     #>
     param([hashtable]$HostEnv = @{})
     $out = [ordered]@{}
-    $sources = @(
-        @{ Var = 'NORNIR_REPO_ROOT_HOST'; Rel = @('nornir-docker', 'deploy', 'stacks.psd1') },
-        @{ Var = 'VIKING_REPO_ROOT_HOST'; Rel = @('deploy', 'stacks.psd1') }
-    )
-    foreach ($src in $sources) {
-        $repo = Get-RepoRootFromEnv -VarName $src.Var -HostEnv $HostEnv
-        if (-not $repo) { continue }
-        $path = Join-DockerHostPath $repo ($src.Rel -join '/')
-        if (-not (Test-Path -LiteralPath $path)) {
-            if ($src.Var -eq 'VIKING_REPO_ROOT_HOST') { Write-Verbose "No Viking registry at $path" }
-            continue
-        }
+    foreach ($src in (Get-StackRegistrySources -HostEnv $HostEnv)) {
+        $registryRoot = Get-RepoRootFromEnv -VarName $src.Var -HostEnv $HostEnv
+        if (-not $registryRoot) { Write-Verbose "$($src.Var) not set; skipping registry $($src.Rel)"; continue }
+        $path = Join-DockerHostPath $registryRoot $src.Rel
+        if (-not (Test-Path -LiteralPath $path)) { Write-Verbose "No registry at $path"; continue }
         $data = Import-PowerShellDataFile -LiteralPath $path
         foreach ($k in ($data.Stacks.Keys | Sort-Object)) {
             $entry = @{} + $data.Stacks[$k]
             $entry.Key = $k
-            $entry.RepoRoot = $repo
+            $entry.RegistryRoot = $registryRoot
             $entry.RepoRootVar = if ($entry.RepoRootVar) { $entry.RepoRootVar } else { $src.Var }
+            $entry.RepoRoot = if ($entry.RepoRootVar -eq $src.Var) { $registryRoot } else { Get-RepoRootFromEnv -VarName $entry.RepoRootVar -HostEnv $HostEnv }
             $entry.RegistryPath = $path
+            if ($out.Contains($k)) { Write-Warning "Stack '$k' in $path replaces the one in $($out[$k].RegistryPath)" }
             $out[$k] = $entry
         }
     }
@@ -238,7 +274,7 @@ function Get-StackEnvironment {
     foreach ($k in $contract.Keys) {
         $envMap[$k] = ConvertTo-DockerBindPath $contract[$k]
     }
-    foreach ($var in @('NORNIR_REPO_ROOT_HOST', 'VIKING_REPO_ROOT_HOST')) {
+    foreach ($var in @('DEPLOY_REPO_ROOT_HOST', 'NORNIR_REPO_ROOT_HOST', 'VIKING_REPO_ROOT_HOST')) {
         if ([string]::IsNullOrWhiteSpace($envMap[$var])) {
             $r = Get-RepoRootFromEnv -VarName $var -HostEnv $envMap
             if ($r) { $envMap[$var] = $r }
@@ -324,7 +360,8 @@ function Test-StackRequired {
     )
     $problems = [System.Collections.Generic.List[string]]::new()
     $dirs = Get-StackDirs -Stack $Entry.Key -Root $Root
-    $example = if ($Entry.Example) { Join-DockerHostPath $Entry.RepoRoot $Entry.Example } else { $null }
+    if (-not $Entry.RepoRoot) { $problems.Add("$($Entry.RepoRootVar) is not set in host.env (this stack runs from that checkout)") }
+    $example = if ($Entry.Example) { Join-DockerHostPath $Entry.RegistryRoot $Entry.Example } else { $null }
     if ($Entry.Example -and -not (Test-Path -LiteralPath $dirs.RunEnv)) {
         $problems.Add("missing $($dirs.RunEnv) (copy from $example)")
     }

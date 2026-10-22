@@ -11,6 +11,7 @@
             Root       = '/srv/docker'                            # that host's NORNIR_DOCKER_USER_ROOT
             Stacks     = @('nornir-build', 'nornir-dashboard', 'viking-segmentation')
             Repos      = @{                                       # checkouts that -Sync fast-forwards
+                DEPLOY_REPO_ROOT_HOST = '/srv/connectomes-deploy'
                 NORNIR_REPO_ROOT_HOST = '/srv/src/nornir'
                 VIKING_REPO_ROOT_HOST = '/srv/src/Viking'
             }
@@ -27,7 +28,7 @@
             Root       = '/srv/docker'
             Stacks     = @('viking-proxy', 'viking-certs', 'viking-identity', 'viking-annotation', 'viking-corrections')
             Repos      = @{
-                NORNIR_REPO_ROOT_HOST = '/srv/src/nornir'
+                DEPLOY_REPO_ROOT_HOST = '/srv/connectomes-deploy'
                 VIKING_REPO_ROOT_HOST = '/srv/src/Viking'
             }
             Tunnels    = @(
@@ -43,7 +44,7 @@
             Root       = 'D:\Docker'
             Stacks     = @('viking-iis')
             Repos      = @{
-                NORNIR_REPO_ROOT_HOST = 'D:\src\git\nornir'
+                DEPLOY_REPO_ROOT_HOST = 'D:\src\git\connectomes-deploy'
                 VIKING_REPO_ROOT_HOST = 'D:\src\git\Viking'
             }
             Tunnels    = @()

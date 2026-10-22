@@ -1,5 +1,5 @@
-# Shared .env parsing for nornir-docker PowerShell scripts.
-# Dot-source:  . (Join-Path $PSScriptRoot 'NornirDotEnv.ps1')
+# Shared .env parsing for the stack scripts (copied from nornir-docker/NornirDotEnv.ps1).
+# Dot-source:  . (Join-Path $PSScriptRoot 'DotEnv.ps1')
 
 function Parse-NornirEnvLine {
     param([string]$Line)
