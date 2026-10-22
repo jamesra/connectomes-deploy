@@ -242,14 +242,41 @@ function Get-VikingHostnameDefaults {
     return $result
 }
 
+$script:SourceRevisionCache = @{}
+
+function Get-SourceRevision {
+    <#
+    .SYNOPSIS
+      HEAD commit of a checkout, suffixed -dirty when tracked files are modified; '' outside git.
+
+    .DESCRIPTION
+      Exported as STACK_SOURCE_REVISION so compose builds stamp org.opencontainers.image.revision.
+      Cached per path for the life of the process.
+    #>
+    param([string]$Path)
+    if (-not $Path) { return '' }
+    if ($script:SourceRevisionCache.ContainsKey($Path)) { return $script:SourceRevisionCache[$Path] }
+    $rev = ''
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $sha = & git -C $Path rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $sha) {
+            $dirty = & git -C $Path status --porcelain --untracked-files=no 2>$null
+            $rev = "$($sha.Trim())$(if ($dirty) { '-dirty' })"
+        }
+    }
+    $script:SourceRevisionCache[$Path] = $rev
+    return $rev
+}
+
 function Get-StackEnvironment {
     <#
     .SYNOPSIS
       Build the full env (host.env + host secrets + stack run.env + stack secrets.env + contract vars).
 
     .DESCRIPTION
-      Later files win. Contract variables (STACK_*, DOCKER_CERTS_DIR, repo roots, derived
-      VIKING_HOSTNAME_*, TLS_CERT_NAME) are added when not already set.
+      Later files win. Contract variables (STACK_*, DOCKER_CERTS_DIR, repo roots,
+      STACK_SOURCE_REVISION, derived VIKING_HOSTNAME_*, VIKING_IDENTITY_URL, VIKING_IDENTITY_API_URL,
+      TLS_CERT_NAME) are added when not already set.
     #>
     param(
         [Parameter(Mandatory)][hashtable]$Entry,
@@ -280,8 +307,20 @@ function Get-StackEnvironment {
             if ($r) { $envMap[$var] = $r }
         }
     }
+    if ([string]::IsNullOrWhiteSpace($envMap['STACK_SOURCE_REVISION'])) {
+        $envMap['STACK_SOURCE_REVISION'] = Get-SourceRevision -Path $Entry.RepoRoot
+    }
     foreach ($e in (Get-VikingHostnameDefaults -Env $envMap).GetEnumerator()) {
         if ([string]::IsNullOrWhiteSpace($envMap[$e.Key])) { $envMap[$e.Key] = $e.Value }
+    }
+    # One identity issuer / WebApi URL for every identity client on the host (compose files fall back
+    # to the same derivation when an older stack.ps1 does not export these).
+    $identityHost = $envMap['VIKING_HOSTNAME_IDENTITY']
+    if ([string]::IsNullOrWhiteSpace($envMap['VIKING_IDENTITY_URL']) -and $identityHost) {
+        $envMap['VIKING_IDENTITY_URL'] = "https://$identityHost/"
+    }
+    if ([string]::IsNullOrWhiteSpace($envMap['VIKING_IDENTITY_API_URL']) -and $identityHost) {
+        $envMap['VIKING_IDENTITY_API_URL'] = "https://$identityHost/webapi/"
     }
     if ([string]::IsNullOrWhiteSpace($envMap['TLS_CERT_NAME']) -and $envMap['VIKING_DOMAIN']) {
         $envMap['TLS_CERT_NAME'] = $envMap['VIKING_DOMAIN']

@@ -316,7 +316,8 @@ function Get-RegistryBuildServices {
 function Invoke-ComposeStack {
     param([hashtable]$Entry, [string]$Act)
     $envMap = Get-StackEnvironment -Entry $Entry -Root $Root
-    if (@('up', 'rebuild', 'restart', 'build', 'config') -contains $Act) { Assert-StackReady -Entry $Entry -EnvMap $envMap }
+    # `build` needs no run-time secrets, so a dev box can build images for publishing without them.
+    if (@('up', 'rebuild', 'restart', 'config') -contains $Act) { Assert-StackReady -Entry $Entry -EnvMap $envMap }
     Initialize-StackDirs -Entry $Entry
     $base = Get-StackComposeBaseArgs -Entry $Entry -ExtraProfiles $Profile -Root $Root
     $svc = if ($Service) { $Service } elseif ($Entry.DefaultService) { $Entry.DefaultService } else { '' }
