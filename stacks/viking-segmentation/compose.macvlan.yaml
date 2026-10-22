@@ -1,0 +1,62 @@
+# viking-segmentation on its own MAC address and IP (Docker macvlan), for a DHCP reservation.
+# Linux hosts only: Docker Desktop's VM hides macvlan containers from the LAN.
+#
+# Turn it on in Run/viking-segmentation/viking-segmentation.run.env (template: the "Own MAC address
+# and IP" block of Viking's deploy/examples/example.viking-segmentation.run.env):
+#   STACK_COMPOSE_OVERLAYS=stacks/viking-segmentation/compose.macvlan.yaml
+#   STACK_PROFILES=none                 only segmentation-server (no v3 / v4 / sem-v1 containers)
+#   SEGMENTATION_MACVLAN_PARENT=eno1    wired host NIC on the LAN (`ip -br link`)
+#   SEGMENTATION_LAN_SUBNET, SEGMENTATION_LAN_GATEWAY
+#   SEGMENTATION_MAC_ADDRESS            the MAC IT reserved the IP for
+#   SEGMENTATION_LAN_IP                 the reserved IP
+#
+# segmentation-net holds the network: Docker gives its macvlan endpoint that MAC and IP, and it runs
+# a DHCP client (segmentation-net.sh) so the DHCP server, and any DHCP snooping on the switch, sees a
+# real lease for the MAC. segmentation-server shares its network namespace and listens on <IP>:443;
+# its demo page stays on loopback, so 443 is the only open port.
+# macvlan traffic bypasses the host firewall (ufw, DOCKER-USER), and the host itself cannot reach
+# the container's IP: test from another machine.
+
+services:
+  segmentation-net:
+    image: ${SEGMENTATION_NET_IMAGE:-alpine:3.20}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/usr/local/bin/segmentation-net.sh"]
+    networks:
+      lan:
+        ipv4_address: ${SEGMENTATION_LAN_IP:?SEGMENTATION_LAN_IP (the reserved IP) must be set for the macvlan overlay}
+        mac_address: ${SEGMENTATION_MAC_ADDRESS:?SEGMENTATION_MAC_ADDRESS (the MAC of the DHCP reservation) must be set for the macvlan overlay}
+    environment:
+      SEGMENTATION_LAN_IP: ${SEGMENTATION_LAN_IP}
+      SEGMENTATION_DHCP: ${SEGMENTATION_DHCP:-1}
+      SEGMENTATION_DHCP_HOSTNAME: ${SEGMENTATION_DHCP_HOSTNAME:-segmentation}
+    volumes:
+      - type: bind
+        source: ${DEPLOY_REPO_ROOT_HOST:?DEPLOY_REPO_ROOT_HOST must be set (stack.ps1 exports it)}/stacks/viking-segmentation/segmentation-net.sh
+        target: /usr/local/bin/segmentation-net.sh
+        read_only: true
+    healthcheck:
+      # Healthy once the DHCP server has confirmed the reservation (always, with SEGMENTATION_DHCP=0).
+      test: ["CMD-SHELL", "[ \"$${SEGMENTATION_DHCP}\" != 1 ] || [ -f /tmp/segmentation-net.bound ]"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  segmentation-server:
+    network_mode: service:segmentation-net
+    ports: !reset []
+    depends_on:
+      # Started, not healthy: the server keeps serving on the reserved IP while DHCP is unreachable.
+      segmentation-net:
+        condition: service_started
+
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: ${SEGMENTATION_MACVLAN_PARENT:?SEGMENTATION_MACVLAN_PARENT (host NIC, e.g. eno1) must be set for the macvlan overlay}
+    ipam:
+      config:
+        - subnet: ${SEGMENTATION_LAN_SUBNET:?SEGMENTATION_LAN_SUBNET must be set for the macvlan overlay}
+          gateway: ${SEGMENTATION_LAN_GATEWAY:?SEGMENTATION_LAN_GATEWAY must be set for the macvlan overlay}

@@ -180,7 +180,7 @@ function Send-ImagesToTarget {
         if (-not $e) { continue }
         if ($e.Engine -eq 'compose') {
             $envMap = Get-StackEnvironment -Entry $e -Root $Root
-            $base = Get-StackComposeBaseArgs -Entry $e -ExtraProfiles $Profile -Root $Root
+            $base = Get-StackComposeBaseArgs -Entry $e -ExtraProfiles $Profile -Root $Root -EnvMap $envMap
             $list = Invoke-WithProcessEnv -Env $envMap -Script { & docker @base config --images }
             foreach ($i in $list) { if ($i) { $imgs.Add($i.Trim()) } }
         }
@@ -319,7 +319,7 @@ function Invoke-ComposeStack {
     # `build` needs no run-time secrets, so a dev box can build images for publishing without them.
     if (@('up', 'rebuild', 'restart', 'config') -contains $Act) { Assert-StackReady -Entry $Entry -EnvMap $envMap }
     Initialize-StackDirs -Entry $Entry
-    $base = Get-StackComposeBaseArgs -Entry $Entry -ExtraProfiles $Profile -Root $Root
+    $base = Get-StackComposeBaseArgs -Entry $Entry -ExtraProfiles $Profile -Root $Root -EnvMap $envMap
     $svc = if ($Service) { $Service } elseif ($Entry.DefaultService) { $Entry.DefaultService } else { '' }
     $runs = @(switch ($Act) {
         'up' { , @('up', '-d', '--remove-orphans') }
@@ -520,7 +520,7 @@ function Invoke-Doctor {
         $problems = Test-StackRequired -Entry $e -Env $envMap -Root $Root
         if ($problems.Count) { foreach ($p in $problems) { Write-Check FAIL "[$k] $p" } } else { Write-Check OK "[$k] configuration complete" }
         if ($e.Engine -eq 'compose' -and $dv -and $e.RepoRoot) {
-            $base = Get-StackComposeBaseArgs -Entry $e -ExtraProfiles $Profile -Root $Root
+            $base = Get-StackComposeBaseArgs -Entry $e -ExtraProfiles $Profile -Root $Root -EnvMap $envMap
             Push-Location $e.RepoRoot
             try {
                 $out = Invoke-WithProcessEnv -Env $envMap -Script { & docker @base config --quiet 2>&1 }
@@ -672,7 +672,7 @@ function Invoke-CertsTool {
         { $_ -in 'letsencrypt', 'acme-eab' } {
             if (-not $certsEntry) { throw 'viking-certs stack not found (set VIKING_REPO_ROOT_HOST in host.env)' }
             $envMap['TLS_MODE'] = $act
-            $base = Get-StackComposeBaseArgs -Entry $certsEntry -Root $Root
+            $base = Get-StackComposeBaseArgs -Entry $certsEntry -Root $Root -EnvMap $envMap
             Push-Location $certsEntry.RepoRoot
             try {
                 $svc = if ($certsEntry.DefaultService) { $certsEntry.DefaultService } else {

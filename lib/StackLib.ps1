@@ -415,6 +415,9 @@ function Test-StackRequired {
         $sp = Join-DockerHostPath $dirs.Secrets $s
         if (-not (Test-Path -LiteralPath $sp)) { $problems.Add("missing secret file $sp") }
     }
+    foreach ($o in (Get-StackComposeOverlays -EnvMap $Env)) {
+        if (-not (Test-Path -LiteralPath $o)) { $problems.Add("STACK_COMPOSE_OVERLAYS names a missing file: $o") }
+    }
     return , $problems.ToArray()
 }
 
@@ -438,12 +441,43 @@ function Invoke-WithProcessEnv {
     }
 }
 
+function Get-StackComposeOverlays {
+    <#
+    .SYNOPSIS
+      Extra compose files from STACK_COMPOSE_OVERLAYS (comma list in the run env), in order.
+
+    .DESCRIPTION
+      Host-specific variations of a stack (e.g. stacks/viking-segmentation/compose.macvlan.yaml) are
+      overlays merged after the registry's ComposeFiles. Relative paths resolve against this repo.
+    #>
+    param([Parameter(Mandatory)][hashtable]$EnvMap)
+    $raw = $EnvMap['STACK_COMPOSE_OVERLAYS']
+    if ([string]::IsNullOrWhiteSpace($raw)) { return , @() }
+    $deployRoot = Get-RepoRootFromEnv -VarName 'DEPLOY_REPO_ROOT_HOST' -HostEnv $EnvMap
+    $files = foreach ($f in ($raw -split ',')) {
+        $f = $f.Trim()
+        if (-not $f) { continue }
+        if ([System.IO.Path]::IsPathRooted($f)) { $f } else { Join-DockerHostPath $deployRoot $f }
+    }
+    return , @($files)
+}
+
 function Get-StackComposeBaseArgs {
+    <#
+    .SYNOPSIS
+      docker compose arguments for a stack: project, env files, compose files plus overlays, profiles.
+
+    .DESCRIPTION
+      STACK_PROFILES in the stack's env replaces the registry's default Profiles (`none` turns them
+      all off); -ExtraProfiles still adds to the result. Pass -EnvMap when the caller already has it.
+    #>
     param(
         [Parameter(Mandatory)][hashtable]$Entry,
         [string[]]$ExtraProfiles = @(),
-        [string]$Root = ''
+        [string]$Root = '',
+        [hashtable]$EnvMap = $null
     )
+    if ($null -eq $EnvMap) { $EnvMap = Get-StackEnvironment -Entry $Entry -Root $Root }
     $a = [System.Collections.Generic.List[string]]::new()
     $a.Add('compose')
     $project = if ($Entry.ComposeProject) { $Entry.ComposeProject } else { $Entry.Key }
@@ -453,7 +487,13 @@ function Get-StackComposeBaseArgs {
         if (-not $f) { continue }
         $a.Add('-f'); $a.Add((Join-DockerHostPath $Entry.RepoRoot $f))
     }
-    foreach ($p in (@($Entry.Profiles) + @($ExtraProfiles -split ",") | Where-Object { $_ } | Select-Object -Unique)) {
+    foreach ($f in (Get-StackComposeOverlays -EnvMap $EnvMap)) { $a.Add('-f'); $a.Add($f) }
+    $profiles = @($Entry.Profiles)
+    $override = $EnvMap['STACK_PROFILES']
+    if (-not [string]::IsNullOrWhiteSpace($override)) {
+        $profiles = if ($override.Trim() -eq 'none') { @() } else { @($override -split '[,\s]+') }
+    }
+    foreach ($p in ($profiles + @($ExtraProfiles -split ",") | Where-Object { $_ } | Select-Object -Unique)) {
         $a.Add('--profile'); $a.Add($p)
     }
     return , $a.ToArray()
