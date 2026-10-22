@@ -9,12 +9,15 @@ Ubuntu or Windows Docker hosts.
 
 ## Quick start (Ubuntu)
 
+Run these from the account you will deploy as (any login that can sudo):
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jamesra/connectomes-deploy/main/bootstrap-ubuntu.sh -o bootstrap-ubuntu.sh
-sudo bash bootstrap-ubuntu.sh --user deploy [--gpu] [--open-web]
+sudo bash bootstrap-ubuntu.sh [--gpu] [--open-web]
 ```
 
-Then follow the commands it prints: clone this repo to `/srv/connectomes-deploy`, run
+That account becomes the deploy user. For a dedicated account instead, create it first
+(`sudo adduser deploy`) and add `--user deploy`. Then follow the commands it prints: clone this repo to `/srv/connectomes-deploy`, run
 `Initialize-DockerHost.ps1 -Role compute|web`, edit `Run/_host/host.env` and each
 `Run/<stack>/<stack>.run.env`, then:
 

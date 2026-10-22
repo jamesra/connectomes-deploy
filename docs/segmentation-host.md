@@ -27,8 +27,9 @@ Run commands on the new host unless a step says otherwise. `stack` is the alias 
 
 - **Hardware:** a bare-metal host with an NVIDIA GPU and a wired NIC on the LAN, running Ubuntu 24.04
   or 26.04. Docker Desktop and Wi-Fi interfaces can't do this (macvlan).
-- **Access:** SSH as a sudo-capable user (called `deploy` here) on the new host, and SSH to `web` and
-  `compute`.
+- **Access:** your login on the new host. It must be able to sudo, and it becomes the deploy user that
+  runs `stack.ps1`. You also need SSH to `web` and `compute`; the commands below write `deploy@web` and
+  `deploy@compute` for your account on those hosts.
 - **Image:** the steps pull the prebuilt `ghcr.io/jamesra/viking-segmentation-server` image. While that
   GHCR package is private, the host needs a GitHub token with `read:packages` (step 6).
 
@@ -61,8 +62,11 @@ After the reboot, `nvidia-smi` must list the GPU. Then:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jamesra/connectomes-deploy/main/bootstrap-ubuntu.sh -o bootstrap-ubuntu.sh
-sudo bash bootstrap-ubuntu.sh --user deploy --gpu
+sudo bash bootstrap-ubuntu.sh --gpu
 ```
+
+Run it from your own login: that account becomes the deploy user. For a dedicated account instead,
+create it first (`sudo adduser deploy`), add `--user deploy`, and do the remaining steps logged in as it.
 
 This installs Docker, PowerShell 7 and the NVIDIA container toolkit, and creates `/srv/docker`,
 `/srv/connectomes-deploy` and `/srv/src`. Log out and back in (docker group). Check that Docker is 25

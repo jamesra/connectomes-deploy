@@ -12,11 +12,13 @@
 # Safe to re-run. It never disables SSH password login unless --harden-ssh is given AND the deploy
 # user already has ~/.ssh/authorized_keys (so you cannot lock yourself out).
 #
-# Usage (as a sudo-capable user, e.g. the account you deploy as):
+# Usage, from the account you will deploy as (it must be able to sudo):
 #   curl -fsSL https://raw.githubusercontent.com/jamesra/connectomes-deploy/main/bootstrap-ubuntu.sh -o bootstrap-ubuntu.sh
-#   sudo bash bootstrap-ubuntu.sh --user deploy [--gpu] [--open-web] [--harden-ssh]
+#   sudo bash bootstrap-ubuntu.sh [--gpu] [--open-web] [--harden-ssh]
 #
-#   --user NAME     deploy user (default: $SUDO_USER)
+#   --user NAME     the deploy user: an EXISTING Linux account that runs stack.ps1, owns the folders
+#                   above and joins the docker group. Default: the account that ran sudo. For a
+#                   dedicated account, create it first (sudo adduser NAME) and pass --user NAME.
 #   --gpu           install the NVIDIA container toolkit (driver must already be installed: ubuntu-drivers install)
 #   --open-web      ufw allow 80/tcp and 443/tcp (the web/proxy host)
 #   --harden-ssh    key-only SSH (PasswordAuthentication no, PermitRootLogin no)
@@ -32,21 +34,57 @@ DEPLOY_ROOT=/srv/connectomes-deploy
 SRC_ROOT=/srv/src
 PWSH_VERSION="${PWSH_VERSION:-7.4.6}"
 
+ORIG_ARGS="$*"
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
+need_value() { [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { echo "$1 needs a value. Usage:" >&2; usage >&2; exit 2; }; }
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --user) DEPLOY_USER="$2"; shift 2 ;;
+    --user) need_value "$@"; DEPLOY_USER="$2"; shift 2 ;;
     --gpu) WANT_GPU=1; shift ;;
     --open-web) OPEN_WEB=1; shift ;;
     --harden-ssh) HARDEN_SSH=1; shift ;;
-    --root) LAYOUT_ROOT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; exit 2 ;;
+    --root) need_value "$@"; LAYOUT_ROOT="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
-if [[ $EUID -ne 0 ]]; then echo "run with sudo" >&2; exit 1; fi
-if [[ -z "$DEPLOY_USER" ]]; then echo "pass --user <deploy-user>" >&2; exit 1; fi
-id "$DEPLOY_USER" >/dev/null 2>&1 || { echo "user $DEPLOY_USER does not exist" >&2; exit 1; }
+if [[ $EUID -ne 0 ]]; then
+  echo "bootstrap-ubuntu.sh installs packages, so run it with sudo: sudo bash $0 $ORIG_ARGS" >&2
+  exit 1
+fi
+
+# The deploy user: an existing account that runs stack.ps1, owns the folders and joins the docker group.
+existing_accounts() { getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 { print $1 }' | paste -sd ' ' -; }
+if [[ -z "$DEPLOY_USER" ]]; then
+  cat >&2 <<EOF
+No deploy user. You are running as root directly, so there is no sudo account to default to.
+
+The deploy user is the existing Linux account that will run stack.ps1. It owns $LAYOUT_ROOT,
+$DEPLOY_ROOT and $SRC_ROOT and is added to the docker group. Either:
+  - log in as that account and run:  sudo bash $0 [--gpu] [--open-web]
+  - or name it:                      bash $0 --user <account> [--gpu] [--open-web]
+Login accounts on this host: $(existing_accounts)
+EOF
+  exit 1
+fi
+if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+The deploy user '$DEPLOY_USER' does not exist on this host. --user must name an existing account.
+
+The deploy user is the Linux account that will run stack.ps1. It owns $LAYOUT_ROOT, $DEPLOY_ROOT
+and $SRC_ROOT and is added to the docker group. Either:
+  - use your own login: leave out --user (it defaults to the account that ran sudo${SUDO_USER:+, '$SUDO_USER'}):
+      sudo bash $0 [--gpu] [--open-web]
+  - or create a dedicated account first, then rerun:
+      sudo adduser $DEPLOY_USER
+      sudo bash $0 --user $DEPLOY_USER [--gpu] [--open-web]
+    (To deploy to this host remotely, also put your SSH public key in /home/$DEPLOY_USER/.ssh/authorized_keys.)
+Login accounts on this host: $(existing_accounts)
+EOF
+  exit 1
+fi
 
 # shellcheck disable=SC1091
 . /etc/os-release
