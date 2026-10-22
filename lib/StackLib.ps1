@@ -189,12 +189,18 @@ function Import-StackRegistry {
     #>
     param([hashtable]$HostEnv = @{})
     $out = [ordered]@{}
+    $report = [System.Collections.Generic.List[object]]::new()
     foreach ($src in (Get-StackRegistrySources -HostEnv $HostEnv)) {
         $registryRoot = Get-RepoRootFromEnv -VarName $src.Var -HostEnv $HostEnv
-        if (-not $registryRoot) { Write-Verbose "$($src.Var) not set; skipping registry $($src.Rel)"; continue }
+        $item = [ordered]@{ Var = $src.Var; Rel = $src.Rel; Root = $registryRoot; Path = ''; Status = 'unset'; Stacks = @() }
+        $report.Add($item)
+        if (-not $registryRoot) { continue }
         $path = Join-DockerHostPath $registryRoot $src.Rel
-        if (-not (Test-Path -LiteralPath $path)) { Write-Verbose "No registry at $path"; continue }
+        $item.Path = $path
+        if (-not (Test-Path -LiteralPath $path)) { $item.Status = 'missing'; continue }
         $data = Import-PowerShellDataFile -LiteralPath $path
+        $item.Status = 'loaded'
+        $item.Stacks = @($data.Stacks.Keys | Sort-Object)
         foreach ($k in ($data.Stacks.Keys | Sort-Object)) {
             $entry = @{} + $data.Stacks[$k]
             $entry.Key = $k
@@ -206,7 +212,46 @@ function Import-StackRegistry {
             $out[$k] = $entry
         }
     }
+    $script:RegistryReport = $report.ToArray()
     return $out
+}
+
+function Get-StackRegistryHelp {
+    <#
+    .SYNOPSIS
+      Explain an unknown stack name: which registry files were read, which were not, and how to fix it.
+
+    .DESCRIPTION
+      Uses what the last Import-StackRegistry saw. Viking stacks come from <VIKING_REPO_ROOT_HOST>/deploy/
+      stacks.psd1, which exists on Viking's dev branch, so a missing or unset Viking checkout is the
+      usual cause.
+    #>
+    param([string]$Key = '')
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("Stack registries read (host.env decides where they are):")
+    foreach ($r in @($script:RegistryReport)) {
+        switch ($r.Status) {
+            'loaded' { $lines.Add("  ok       $($r.Path): $(@($r.Stacks) -join ', ')") }
+            'unset' { $lines.Add("  not read $($r.Var) is not set in host.env, so $($r.Var)/$($r.Rel) was skipped.") }
+            'missing' { $lines.Add("  not read $($r.Path) does not exist ($($r.Var)=$($r.Root)).") }
+        }
+    }
+    $viking = @($script:RegistryReport) | Where-Object { $_.Var -eq 'VIKING_REPO_ROOT_HOST' } | Select-Object -First 1
+    if ($Key -like 'viking-*' -and $viking -and $viking.Status -ne 'loaded') {
+        $lines.Add("'$Key' is a Viking stack, defined in the Viking checkout's deploy/stacks.psd1 (branch dev). Fix:")
+        if ($viking.Status -eq 'unset') {
+            $lines.Add("  git clone -b dev https://github.com/jamesra/Viking.git /srv/src/Viking   (if you have no checkout)")
+            $lines.Add("  set VIKING_REPO_ROOT_HOST=/srv/src/Viking in Run/_host/host.env")
+        }
+        elseif (-not (Test-Path -LiteralPath $viking.Root)) {
+            $lines.Add("  VIKING_REPO_ROOT_HOST points at a folder that does not exist: clone Viking there")
+            $lines.Add("  (git clone -b dev https://github.com/jamesra/Viking.git $($viking.Root)) or correct host.env.")
+        }
+        else {
+            $lines.Add("  the checkout at $($viking.Root) is probably not on branch dev: git -C '$($viking.Root)' checkout dev")
+        }
+    }
+    return ($lines -join [Environment]::NewLine)
 }
 
 function Get-VikingHostnameDefaults {

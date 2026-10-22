@@ -258,7 +258,8 @@ function Get-Entry {
     param([string]$Key)
     $e = $script:Registry[$Key]
     if (-not $e) {
-        throw "Unknown stack '$Key'. Known: $(($script:Registry.Keys) -join ', '). (Viking stacks need VIKING_REPO_ROOT_HOST in host.env; see also STACK_EXTRA_REGISTRIES.)"
+        Write-Host (Get-StackRegistryHelp -Key $Key) -ForegroundColor Yellow
+        throw "Unknown stack '$Key'. Known: $(($script:Registry.Keys) -join ', ')."
     }
     if (-not $e.RepoRoot) { throw "Stack '$Key' runs from the $($e.RepoRootVar) checkout; set $($e.RepoRootVar) in host.env." }
     return $e
@@ -513,7 +514,11 @@ function Invoke-Doctor {
     $needsTls = $false
     foreach ($k in $stacks) {
         $e = $script:Registry[$k]
-        if (-not $e) { Write-Check FAIL "stack '$k' in NORNIR_DOCKER_HOST_STACKS is not in any registry"; continue }
+        if (-not $e) {
+            Write-Check FAIL "stack '$k' in NORNIR_DOCKER_HOST_STACKS is not in any registry"
+            Write-Host (Get-StackRegistryHelp -Key $k) -ForegroundColor Yellow
+            continue
+        }
         if ($e.Gpu -or $k -in 'nornir-build', 'viking-segmentation') { $needsGpu = $true }
         if ($k -like 'viking-*') { $needsTls = $true }
         $envMap = Get-StackEnvironment -Entry $e -Root $Root

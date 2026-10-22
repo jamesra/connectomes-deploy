@@ -206,7 +206,8 @@ Write-Host 'Stack files:'
 foreach ($s in $Stacks) {
     $e = $registry[$s]
     if (-not $e) {
-        Write-Warning "  stack '$s' not in any registry (Viking stacks need -VikingRepoRoot)"
+        Write-Warning "  stack '$s' not in any registry (Viking stacks need -VikingRepoRoot <Viking checkout on branch dev>)"
+        Write-Host (Get-StackRegistryHelp -Key $s) -ForegroundColor Yellow
         continue
     }
     if (-not $e.RepoRoot) { Write-Warning "  stack '$s' runs from the $($e.RepoRootVar) checkout; set it in host.env" }
