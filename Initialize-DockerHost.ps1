@@ -213,6 +213,7 @@ foreach ($s in $Stacks) {
     if (-not $e.RepoRoot) { Write-Warning "  stack '$s' runs from the $($e.RepoRootVar) checkout; set it in host.env" }
     $d = Get-StackDirs -Stack $s -Root $layout.Root
     if ($e.Example) { Copy-IfMissing (Join-DockerHostPath $e.RegistryRoot $e.Example) $d.RunEnv }
+    if ($e.ModelsExample) { Copy-IfMissing (Join-DockerHostPath $e.RegistryRoot $e.ModelsExample) (Join-DockerHostPath $d.Run 'models.json') }
     foreach ($sx in @($e.SecretExamples)) {
         if ($sx) { Copy-IfMissing (Join-DockerHostPath $e.RegistryRoot $sx.From) (Join-DockerHostPath $d.Secrets $sx.To) -Private }
     }

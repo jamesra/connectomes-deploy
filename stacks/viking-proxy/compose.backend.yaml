@@ -1,0 +1,20 @@
+# viking-proxy on the Docker network it shares with the stacks on this host (segmentation model servers
+# with network backend), so it reaches them by container name and nothing needs a published port.
+#
+# Turn it on in Run/viking-proxy/viking-proxy.run.env:
+#   STACK_COMPOSE_OVERLAYS=stacks/viking-proxy/compose.backend.yaml
+# and name the network once for the host in Run/_host/host.env:
+#   VIKING_BACKEND_NETWORK=viking-backend
+# stack.ps1 creates the network when it is missing. Only for servers on the proxy's own host: the
+# segmentation servers on another host stay on published ports or their own IP (see their models.json).
+
+services:
+  viking-proxy:
+    networks:
+      - default
+      - backend
+
+networks:
+  backend:
+    name: ${VIKING_BACKEND_NETWORK:?VIKING_BACKEND_NETWORK (the shared Docker network) must be set for this overlay}
+    external: true

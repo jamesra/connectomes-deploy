@@ -4,7 +4,6 @@
 # Turn it on in Run/viking-segmentation/viking-segmentation.run.env (template: the "Own MAC address
 # and IP" block of Viking's deploy/examples/example.viking-segmentation.run.env):
 #   STACK_COMPOSE_OVERLAYS=stacks/viking-segmentation/compose.macvlan.yaml
-#   STACK_PROFILES=none                 only segmentation-server (no v3 / v4 / sem-v1 containers)
 #   SEGMENTATION_MACVLAN_PARENT=eno1    wired host NIC on the LAN (`ip -br link`)
 #   SEGMENTATION_LAN_SUBNET, SEGMENTATION_LAN_GATEWAY
 #   SEGMENTATION_MAC_ADDRESS            the MAC IT reserved the IP for

@@ -129,7 +129,6 @@ Append to `/srv/docker/Run/viking-segmentation/viking-segmentation.run.env`:
 ```bash
 # Own MAC address and IP (connectomes-deploy docs/segmentation-host.md)
 STACK_COMPOSE_OVERLAYS=stacks/viking-segmentation/compose.macvlan.yaml
-STACK_PROFILES=none
 SEGMENTATION_MACVLAN_PARENT=<nic>
 SEGMENTATION_LAN_SUBNET=10.20.30.0/24
 SEGMENTATION_LAN_GATEWAY=10.20.30.1
@@ -139,7 +138,9 @@ SEGMENTATION_DHCP_HOSTNAME=<the hostname IT registered for the reservation>
 SEGMENTATION_IMAGE=ghcr.io/jamesra/viking-segmentation-server:latest
 ```
 
-- `STACK_PROFILES=none` runs only `segmentation-server`, without the v3 / v4 / sem-v1 containers.
+- Only `segmentation-server` (the default model) starts. Further models are rows of
+  `/srv/docker/Run/viking-segmentation/models.json`, added with `stack viking-segmentation model <prefix> <file.pt>`;
+  see "More models" below.
 - `SEGMENTATION_IMAGE` works with every Viking checkout. Viking checkouts newer than 2026-10-22 also
   accept the name `VIKING_SEGMENTATION_IMAGE`.
 - Port settings copied from the old host (`SEGMENTATION_HTTPS_PORT`, ...) no longer apply: nothing is
@@ -229,6 +230,37 @@ On `compute`, stop the old default server:
   `docker stop viking-segmentation-segmentation-server-1`. A later `stack viking-segmentation up` or
   `restart` on `compute` starts it again, so stop it again after one. `viking-proxy` keeps sending the
   model hostnames to `VIKING_COMPUTE_HOST` as before.
+
+## More models
+
+Every other model is a row of `/srv/docker/Run/viking-segmentation/models.json` (the initializer copies an empty
+table there). Put the weights and `<stem>.model.json` in `/srv/docker/Data/viking-segmentation/models/`, then:
+
+```bash
+stack viking-segmentation model v3 sam2_em_v3_epoch_9.pt   # add or change a server and start it
+stack viking-segmentation model v5 v5/serve_epoch4.pt      # weights in a subfolder
+stack viking-segmentation model -Remove v3                 # delete it
+```
+
+Each row becomes `segmentation-<prefix>.<domain>` (one label, so the `*.<domain>` certificate covers it). How
+the proxy reaches it is the row's `network`:
+
+- `backend`: `viking-proxy` runs on this host and shares a Docker network with the server, so nothing is
+  published. Set `VIKING_BACKEND_NETWORK=viking-backend` in `host.env` and add
+  `stacks/viking-proxy/compose.backend.yaml` to the proxy's `STACK_COMPOSE_OVERLAYS`. This is the default
+  once `VIKING_BACKEND_NETWORK` is set; use it whenever the proxy is on the same machine.
+- `published`: host port `port`, reached as `SEGMENTATION_UPSTREAM_HOST:<port>` (default `VIKING_COMPUTE_HOST`).
+  The default when the host has no backend network.
+- `macvlan`: its own MAC and IP like the server above. The row sets `mac`, `ip` and `dhcpHostname`; the
+  `SEGMENTATION_MACVLAN_PARENT` / `_LAN_SUBNET` / `_LAN_GATEWAY` settings are shared with the default server.
+
+The command writes `Data/viking-segmentation/proxy-models.map` (host name and upstream per row) and
+`cert-names.names` (the host names). Put them in `Data/viking-proxy/models.d/segmentation.map` and
+`Data/viking-certs/names.d/segmentation.names` on the host that runs those stacks, or set
+`SEGMENTATION_PROXY_MAP_DIR` and `SEGMENTATION_CERT_NAMES_DIR` to those folders when they are on this host.
+Restart `viking-proxy` after the map changes. TLS can also come from your own files:
+`SEGMENTATION_CERT_DIR=<folder with fullchain.pem and privkey.pem>`.
+Viking's `Documentation/source/deployment/segmentation.rst` lists every row field.
 
 ## Rollback
 

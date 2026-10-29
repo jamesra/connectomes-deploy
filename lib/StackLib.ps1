@@ -267,9 +267,6 @@ function Get-VikingHostnameDefaults {
         CORRECTIONS      = 'corrections'
         SEGMENTATION     = 'segmentation'
         SEGMENTATIONDEMO = 'segmentationdemo'
-        SEG_V3           = 'segmentation-v3'
-        SEG_V4           = 'segmentation-v4'
-        SEG_SEM_V1       = 'segmentation-sem-v1'
         GALLERY          = 'gallery'
         TEM_GALLERY      = 'gallery-tem'
         SEM_GALLERY      = 'gallery-sem'
@@ -515,6 +512,7 @@ function Get-StackComposeBaseArgs {
     .DESCRIPTION
       STACK_PROFILES in the stack's env replaces the registry's default Profiles (`none` turns them
       all off); -ExtraProfiles still adds to the result. Pass -EnvMap when the caller already has it.
+      Run/<stack>/compose.generated.yaml, when present, is merged after the overlays.
     #>
     param(
         [Parameter(Mandatory)][hashtable]$Entry,
@@ -533,6 +531,9 @@ function Get-StackComposeBaseArgs {
         $a.Add('-f'); $a.Add((Join-DockerHostPath $Entry.RepoRoot $f))
     }
     foreach ($f in (Get-StackComposeOverlays -EnvMap $EnvMap)) { $a.Add('-f'); $a.Add($f) }
+    # Written by the stack's ModelScript (segmentation servers from models.json); merged last.
+    $generated = Join-DockerHostPath (Get-StackDirs -Stack $Entry.Key -Root $Root).Run 'compose.generated.yaml'
+    if (Test-Path -LiteralPath $generated) { $a.Add('-f'); $a.Add($generated) }
     $profiles = @($Entry.Profiles)
     $override = $EnvMap['STACK_PROFILES']
     if (-not [string]::IsNullOrWhiteSpace($override)) {

@@ -34,6 +34,11 @@ Keep new work consistent with these; they are what the existing scripts and docs
   fields). Fill in all of them for a new stack, even when empty (`Ports = @()`), so `doctor` can check everything.
 - Paths in registries use forward slashes. `Example` and `SecretExamples` are relative to this repo; `Script`,
   `ComposeFiles` and `Deploy` are relative to the checkout named by `RepoRootVar`.
+- Optional registry fields: `ModelScript` (a script in the stack's checkout that `stack.ps1 <stack> model ...`
+  runs; it updates `Run/<stack>/models.json`, writes `compose.generated.yaml`, which is merged after the overlays,
+  and reports the services to start in `STACK_ACTION_RESULT`), `ModelsExample` (the table's template, copied by
+  `Initialize-DockerHost.ps1`) and `DataDirs` (folders under `Data/<stack>/` that other stacks write into, created
+  before the stack mounts them).
 - A registry is authoritative for what a stack needs. If a stack needs a new setting, add it to `Required` and to
   the template; do not make `stack.ps1` special-case the stack.
 - An unknown stack must fail with the registries read, the ones skipped and why, and the fix (see the "not in any

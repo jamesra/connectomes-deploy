@@ -26,7 +26,9 @@
   tool verb: list, doctor, certs, tunnel, prune, secrets, targets.
 
 .PARAMETER Action
-  For stacks: up, down, restart, rebuild, build, pull, push, logs, ps, status, exec, shell, config.
+  For stacks: up, down, restart, rebuild, build, pull, push, logs, ps, status, exec, shell, config,
+  and model for stacks with a models table (viking-segmentation): `model <prefix> <file>` adds or
+  changes a server, `model <prefix>` recreates it, `model -Remove <prefix>` deletes it.
   For `certs`: status, manual, letsencrypt, acme-eab, push, reload, install-iis.
   For `secrets`: new.
 
@@ -121,7 +123,7 @@ $script:HostEnv = Read-HostEnv -Root $Root
 $script:Registry = Import-StackRegistry -HostEnv $script:HostEnv
 
 $ToolVerbs = @('list', 'doctor', 'certs', 'tunnel', 'prune', 'secrets', 'targets')
-$StackActions = @('up', 'down', 'restart', 'rebuild', 'build', 'pull', 'push', 'logs', 'ps', 'status', 'exec', 'shell', 'config', 'deploy')
+$StackActions = @('up', 'down', 'restart', 'rebuild', 'build', 'pull', 'push', 'logs', 'ps', 'status', 'exec', 'shell', 'config', 'deploy', 'model')
 
 #region remote
 
@@ -277,8 +279,13 @@ function Assert-StackReady {
 function Initialize-StackDirs {
     param([hashtable]$Entry)
     $d = Get-StackDirs -Stack $Entry.Key -Root $Root
-    foreach ($p in @($d.Data, $d.Logs, $d.Secrets, $script:Layout.Certs)) {
-        if (-not (Test-Path -LiteralPath $p)) { $null = New-Item -ItemType Directory -Force -Path $p }
+    # Certs/<name>/ is bind-mounted by the TLS stacks: made here so Docker does not create it as root.
+    $certName = if ($script:HostEnv['TLS_CERT_NAME']) { $script:HostEnv['TLS_CERT_NAME'] } else { $script:HostEnv['VIKING_DOMAIN'] }
+    $certDir = if ($certName) { Join-DockerHostPath $script:Layout.Certs $certName } else { $null }
+    # DataDirs: drop-in folders other stacks write into (viking-proxy models.d, viking-certs names.d).
+    $dropIns = @($Entry.DataDirs | Where-Object { $_ } | ForEach-Object { Join-DockerHostPath $d.Data $_ })
+    foreach ($p in (@($d.Data, $d.Logs, $d.Secrets, $script:Layout.Certs, $certDir) + $dropIns)) {
+        if ($p -and -not (Test-Path -LiteralPath $p)) { $null = New-Item -ItemType Directory -Force -Path $p }
     }
 }
 
@@ -314,12 +321,57 @@ function Get-RegistryBuildServices {
     return @($names)
 }
 
+function Confirm-BackendNetwork {
+    <# Create the Docker network named by VIKING_BACKEND_NETWORK (shared by viking-proxy and the segmentation servers) when it is missing. #>
+    param([hashtable]$EnvMap)
+    $net = $EnvMap['VIKING_BACKEND_NETWORK']
+    if ([string]::IsNullOrWhiteSpace($net)) { return }
+    & docker network inspect $net *> $null
+    if ($LASTEXITCODE -eq 0) { return }
+    Invoke-Docker -Arguments @('network', 'create', $net)
+}
+
+function Invoke-ModelAction {
+    <#
+      `model <prefix> [file]`: the stack's ModelScript updates the models table and writes
+      Run/<stack>/compose.generated.yaml, then the servers it selected (or, after -Remove, the
+      remaining ones) are started. The script reports its selection in STACK_ACTION_RESULT.
+    #>
+    param([hashtable]$Entry, [hashtable]$EnvMap)
+    if (-not $Entry.ModelScript) { throw "Stack $($Entry.Key) has no models table (its registry entry has no ModelScript)." }
+    Assert-StackReady -Entry $Entry -EnvMap $EnvMap
+    Confirm-BackendNetwork -EnvMap $EnvMap
+    $scriptPath = Join-DockerHostPath $Entry.RepoRoot $Entry.ModelScript
+    $resultFile = [System.IO.Path]::GetTempFileName()
+    $EnvMap['STACK_ACTION_RESULT'] = $resultFile
+    try {
+        Invoke-PwshScript -Path $scriptPath -Arguments $Rest -EnvMap $EnvMap
+        if ($script:Rc -ne 0) { return }
+        $raw = Get-Content -LiteralPath $resultFile -Raw
+        if ([string]::IsNullOrWhiteSpace($raw)) { return }   # help or dry run: nothing to start
+        $result = $raw | ConvertFrom-Json
+        # Recomputed after the script ran: the generated overlay is part of the compose arguments.
+        $base = Get-StackComposeBaseArgs -Entry $Entry -ExtraProfiles $Profile -Root $Root -EnvMap $EnvMap
+        $services = @($result.services | Where-Object { $_ })
+        $up = @('up', '-d', '--remove-orphans') + $services
+        Push-Location $Entry.RepoRoot
+        try {
+            Invoke-WithProcessEnv -Env $EnvMap -Script { Invoke-Docker -Arguments (@($base) + $up); $script:lastCode = $script:Rc }
+        }
+        finally { Pop-Location }
+        $script:Rc = $script:lastCode
+    }
+    finally { Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue }
+}
+
 function Invoke-ComposeStack {
     param([hashtable]$Entry, [string]$Act)
     $envMap = Get-StackEnvironment -Entry $Entry -Root $Root
+    if ($Act -eq 'model') { Initialize-StackDirs -Entry $Entry; Invoke-ModelAction -Entry $Entry -EnvMap $envMap; return }
     # `build` needs no run-time secrets, so a dev box can build images for publishing without them.
     if (@('up', 'rebuild', 'restart', 'config') -contains $Act) { Assert-StackReady -Entry $Entry -EnvMap $envMap }
     Initialize-StackDirs -Entry $Entry
+    if (@('up', 'rebuild', 'restart') -contains $Act) { Confirm-BackendNetwork -EnvMap $envMap }
     $base = Get-StackComposeBaseArgs -Entry $Entry -ExtraProfiles $Profile -Root $Root -EnvMap $envMap
     $svc = if ($Service) { $Service } elseif ($Entry.DefaultService) { $Entry.DefaultService } else { '' }
     $runs = @(switch ($Act) {
