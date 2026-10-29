@@ -22,10 +22,15 @@ None recorded yet.
   writes `compose.generated.yaml`, whose services `extends` one template in Viking's compose file. Rejected: compose
   profiles per model (static, a new model needs a code change); a generator that emits the full service (drifts).
   Where: `stack.ps1` (`Invoke-ModelAction`), Viking `Servers/SegmentationServer/rebuild-and-start.ps1`.
-- **2026-10-29 Model host names are one label (`segmentation-<prefix>.<domain>`).** Why: `*.connectomes.pitt.edu`
-  covers one label, so `v3.segmentation.<domain>` (the dev box's `v3.segmentation.codepharm.net` scheme) would need
-  its own `*.segmentation.<domain>` certificate, which HTTP-01 cannot issue. Rejected: two-label names by default
-  (a `hostname` field in the row still allows them).
+- **2026-10-29 Model host names are `<prefix>.segmentation.<domain>`, with `*.segmentation.<domain>` on the
+  certificate.** Why: the names follow the bare `segmentation.<domain>` and match the earlier dev-box scheme
+  (`v3.segmentation.codepharm.net`), so a model is recognisable from its name. The cost is that `*.<domain>` covers
+  one label, so the shared certificate needs `*.segmentation.<domain>` as an extra name, requested from the CA and
+  installed with `stack certs manual`. `letsencrypt` mode validates over HTTP-01, which cannot issue a wildcard, so
+  there each model name is listed (drop-in `names.d`) and `viking-certs` skips names a wildcard already covers.
+  Rejected: single-label `segmentation-<prefix>.<domain>` (briefly the default on 2026-10-29, chosen without asking
+  and justified by an overstated claim that two-label names could not be certified; the row's `hostname` field still
+  allows it).
 - **2026-10-29 The proxy reaches a model server over a shared Docker network when it is on the same host.** Why: no
   published port and no host firewall bypass; the name resolves through Docker DNS. Rows default to this when
   `VIKING_BACKEND_NETWORK` is set, to a published host port otherwise, and `macvlan` gives a row its own MAC and IP.

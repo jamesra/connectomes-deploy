@@ -58,7 +58,9 @@ Keep new work consistent with these; they are what the existing scripts and docs
   from `VIKING_HOSTNAME_IDENTITY`) and export them to every stack. A stack's own explicit setting wins over the
   shared default.
 - Public hostnames are single-label subdomains of `VIKING_DOMAIN`, so one `*.domain` wildcard certificate covers
-  every service.
+  every service. The exception is the
+  segmentation model servers, `<prefix>.segmentation.<domain>`, which need `*.segmentation.<domain>` on the
+  certificate (or each name listed).
 - `stack.ps1 <stack> build` must not require run-time settings or secrets, so a dev box can build images from a
   clean checkout.
 

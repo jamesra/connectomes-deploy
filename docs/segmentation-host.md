@@ -242,8 +242,10 @@ stack viking-segmentation model v5 v5/serve_epoch4.pt      # weights in a subfol
 stack viking-segmentation model -Remove v3                 # delete it
 ```
 
-Each row becomes `segmentation-<prefix>.<domain>` (one label, so the `*.<domain>` certificate covers it). How
-the proxy reaches it is the row's `network`:
+Each row becomes `<prefix>.segmentation.<domain>`. That has two labels, so `*.<domain>` does not cover it: ask for
+`*.segmentation.<domain>` as an extra name on the certificate (with `<domain>` and `*.<domain>`) and install the issued
+files with `stack certs manual`. In `letsencrypt` mode a wildcard cannot be validated, so each name is listed instead
+(`viking-certs` leaves out a name that a wildcard already covers). How the proxy reaches a model is the row's `network`:
 
 - `backend`: `viking-proxy` runs on this host and shares a Docker network with the server, so nothing is
   published. Set `VIKING_BACKEND_NETWORK=viking-backend` in `host.env` and add
