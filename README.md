@@ -26,10 +26,27 @@ stack doctor
 stack all up
 ```
 
+## Commands on your PATH
+
+`scripts/` holds thin wrappers so you can run the tooling from any folder. Each command is a PowerShell script
+(`<name>.ps1`) and a bash twin (`<name>.sh`) that only calls it:
+
+| Command | Runs |
+|---------|------|
+| `stack` | `stack.ps1` of this checkout (`stack doctor`, `stack viking-segmentation up`, ...) |
+| `initialize-dockerhost` | `Initialize-DockerHost.ps1` |
+| `segmentation-model` | `stack.ps1 viking-segmentation model` (`segmentation-model v5 v5/serve_epoch4.pt`) |
+
+Ubuntu: `echo 'export PATH="$PATH:/srv/connectomes-deploy/scripts"' >> ~/.profile`, then `stack.sh doctor`. For the plain
+names, link them: `ln -s /srv/connectomes-deploy/scripts/stack.sh ~/bin/stack` (the `.sh` files are executable and
+follow symlinks). Windows: add `D:\src\git\connectomes-deploy\scripts` to `PATH`; PowerShell then runs `stack` and
+`segmentation-model` directly. `Initialize-DockerHost.ps1` also adds a `stack` alias for you with `-SetUserEnv`.
+
 ## Layout
 
 | Path | What |
 |------|------|
+| `scripts/` | Commands for your `PATH`: `stack`, `initialize-dockerhost`, `segmentation-model`, each a `.ps1` with a `.sh` twin that calls it (see "Commands on your PATH") |
 | `stack.ps1` | Entry point: `list`, `doctor`, `certs`, `secrets`, `tunnel`, `prune`, `targets`, and `<stack> up/down/rebuild/logs/...` |
 | `Initialize-DockerHost.ps1` | One-time host layout setup (`Run/`, `Data/`, `Certs/`, `Work/`, `Logs/` under `NORNIR_DOCKER_USER_ROOT`) |
 | `Move-DockerHostLayout.ps1` | Migrates the older `D:\Docker` layout |

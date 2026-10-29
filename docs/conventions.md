@@ -99,6 +99,8 @@ Never edit files on a server to work around `-Sync`. The nornir `deploy-connecto
 - PowerShell 7.2+ (`#Requires -Version 7.2`), with comment-based help (`.SYNOPSIS`, `.DESCRIPTION`, `.PARAMETER`,
   `.EXAMPLE`) on every entry-point script, and cross-platform: the same script runs on Windows and Ubuntu.
   `bootstrap-ubuntu.sh` is the only shell prerequisite; it documents its own flags in its header and `--help`.
+- A command you run often gets a wrapper in `scripts/`: `<name>.ps1` calls the entry point and `<name>.sh` only calls
+  `<name>.ps1`, so one folder on `PATH` serves both shells (keep the `.sh` files executable).
 - Shared helpers go in `lib/`; entry points stay thin. `stack.ps1 <stack> <action>` and `stack.ps1 <action> <stack>`
   are both accepted.
 - Use forward slashes in registry paths and `Join-Path` in code. Do not hard-code an account named `deploy`; the
