@@ -124,6 +124,10 @@ ip -4 -br addr show eno1    # the host's address and prefix, e.g. 10.20.30.15/24
 ip route show default       # the gateway
 ```
 
+On a VLAN, set `SEGMENTATION_MACVLAN_PARENT` to the tagged sub-interface instead of the NIC, for example `eno1.1811` for
+VLAN 1811. Docker creates it. IT must carry that VLAN tagged on the switch port, and the subnet, gateway and
+DHCP reservation must be the VLAN's. Keep the plain NIC when the port is an access port in that VLAN.
+
 Append to `/srv/docker/Run/viking-segmentation/viking-segmentation.run.env`:
 
 ```bash
