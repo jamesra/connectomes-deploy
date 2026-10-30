@@ -77,10 +77,13 @@ or newer: `docker version --format '{{.Server.Version}}'`.
 ```bash
 git clone https://github.com/jamesra/connectomes-deploy.git /srv/connectomes-deploy
 git clone -b dev https://github.com/jamesra/Viking.git /srv/src/Viking
+git -C /srv/src/Viking submodule update --init gRPC_Protos
 ```
 
-Viking is needed only for its compose files while they still live there; with the prebuilt image nothing
-is built from it.
+Viking is needed for its compose files while they still live there. With the prebuilt image nothing is built from
+it. Without it, `up` builds the image on this host from the checkout, which needs the `gRPC_Protos` submodule fetched
+by the last command (the build stops at `COPY gRPC_Protos/Common ... not found` otherwise). The other submodules are
+not needed here.
 
 ## 4. Create the host layout
 
