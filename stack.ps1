@@ -360,6 +360,20 @@ function Invoke-ModelAction {
         }
         finally { Pop-Location }
         $script:Rc = $script:lastCode
+        $modelCode = $script:Rc
+        # Stacks the script asked to restart (viking-certs, after a new certificate name). Only when that stack runs
+        # here; a failed restart is reported but never turns the model change into a failure.
+        if ($modelCode -eq 0) {
+            foreach ($name in @($result.restartStacks | Where-Object { $_ })) {
+                $other = $script:Registry[$name]
+                $running = if ($other) { & docker ps -q --filter "label=com.docker.compose.project=$name" 2>$null } else { $null }
+                if (-not $running) { Write-Host "$name is not running on this host; restart it where it runs to pick up the new name." -ForegroundColor Yellow; continue }
+                Write-Host "Restarting $name ..." -ForegroundColor Cyan
+                Invoke-ComposeStack -Entry (Get-Entry -Key $name) -Act 'restart'
+                if ($script:Rc -ne 0) { Write-Warning "Restarting $name failed (exit $($script:Rc)); run: stack.ps1 $name restart" }
+            }
+            $script:Rc = $modelCode
+        }
     }
     finally { Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue }
 }

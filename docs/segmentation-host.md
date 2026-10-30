@@ -260,6 +260,8 @@ The command writes `Data/viking-segmentation/proxy-models.map` (host name and up
 `cert-names.names` (the host names). Put them in `Data/viking-proxy/models.d/segmentation.map` and
 `Data/viking-certs/names.d/segmentation.names` on the host that runs those stacks, or set
 `SEGMENTATION_PROXY_MAP_DIR` and `SEGMENTATION_CERT_NAMES_DIR` to those folders when they are on this host.
+When `SEGMENTATION_CERT_NAMES_DIR` is set, a changed name list makes `stack viking-segmentation model` restart
+`viking-certs` (unless `TLS_MODE=manual`), so the new name is requested at once instead of within 12 hours.
 Restart `viking-proxy` after the map changes. TLS can also come from your own files:
 `SEGMENTATION_CERT_DIR=<folder with fullchain.pem and privkey.pem>`.
 Viking's `Documentation/source/deployment/segmentation.rst` lists every row field.
