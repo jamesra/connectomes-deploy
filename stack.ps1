@@ -37,13 +37,15 @@
 
 .PARAMETER Sync
   With -Target: verify local branches are pushed, then `git pull --ff-only` + submodule update on the target.
+  Only submodules already initialized on the target are updated (no --init): a host inits the ones it needs
+  at setup (Viking: gRPC_Protos only), and a submodule added to a repo later needs one manual init there.
 
 .PARAMETER Images
   With -Target: build (default; images are built on the target), ghcr (pull from GHCR on the
   target), or load (docker save here | ssh target docker load).
 
 .PARAMETER Profile
-  Extra compose profiles (e.g. segmentation model variants).
+  Extra compose profiles. Segmentation models are not profiles; add them with `viking-segmentation model`.
 
 .PARAMETER Service
   Compose service for exec/shell/logs (default: the stack's DefaultService or first service).
@@ -165,9 +167,10 @@ function Sync-TargetRepos {
             Write-Host "[$Name] $var -> $remote (local $branch @ $($head.Substring(0, 9)))"
         }
         $q = ConvertTo-RemoteArg $remote
-        $cmd = "git -C $q pull --ff-only && git -C $q submodule update --init --recursive && git -C $q log -1 --oneline"
+        # No --init: Viking's NetTopologySuite submodules are not needed on hosts and may not resolve.
+        $cmd = "git -C $q pull --ff-only && git -C $q submodule update --recursive && git -C $q log -1 --oneline"
         if ($T.Os -eq 'windows') {
-            $cmd = "git -C $q pull --ff-only; if (`$LASTEXITCODE -eq 0) { git -C $q submodule update --init --recursive; git -C $q log -1 --oneline }"
+            $cmd = "git -C $q pull --ff-only; if (`$LASTEXITCODE -eq 0) { git -C $q submodule update --recursive; git -C $q log -1 --oneline }"
         }
         Invoke-Ssh -Target $T -Command $cmd; $code = $script:Rc
         if ($code -ne 0) { throw "[$Name] git sync of $remote failed (exit $code)" }

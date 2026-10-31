@@ -111,10 +111,20 @@ function Copy-IfMissing {
 }
 
 function Set-EnvFileDefault {
-    <# Fill KEY= in an env file only when the key is present with an empty value. #>
-    param([string]$Path, [string]$Key, [string]$Value)
+    <#
+      Fill KEY= in an env file only when the key is present with an empty value. With -AppendIfMissing, also
+      append KEY=Value when no uncommented KEY= line exists. An existing value is never changed.
+    #>
+    param([string]$Path, [string]$Key, [string]$Value, [switch]$AppendIfMissing)
     if (-not $Value -or -not (Test-Path -LiteralPath $Path)) { return }
     $lines = Get-Content -LiteralPath $Path
+    if ($AppendIfMissing -and -not ($lines -match "^\s*$([regex]::Escape($Key))\s*=")) {
+        $raw = Get-Content -LiteralPath $Path -Raw
+        $sep = if ($raw -and -not $raw.EndsWith("`n")) { [Environment]::NewLine } else { '' }
+        Add-Content -LiteralPath $Path -Value "$sep$Key=$Value" -Encoding utf8
+        Write-Host "  added    $Key=$Value to $(Split-Path -Leaf $Path)"
+        return
+    }
     $changed = $false
     $lines = foreach ($l in $lines) {
         if ($l -match "^\s*$([regex]::Escape($Key))\s*=\s*$") { $changed = $true; "$Key=$Value" } else { $l }
@@ -196,7 +206,7 @@ Write-Host 'Host files:'
 Copy-IfMissing (Join-Path $hostTemplates 'example.host.env') $layout.HostEnv
 Copy-IfMissing (Join-Path $hostTemplates 'example.host.secrets.env') $layout.HostSecretsEnv -Private
 Set-EnvFileDefault $layout.HostEnv 'NORNIR_DOCKER_USER_ROOT' $layout.Root
-Set-EnvFileDefault $layout.HostEnv 'DEPLOY_REPO_ROOT_HOST' $DeployRoot
+Set-EnvFileDefault $layout.HostEnv 'DEPLOY_REPO_ROOT_HOST' $DeployRoot -AppendIfMissing   # host.env from nornir-docker/deploy lacks it
 Set-EnvFileDefault $layout.HostEnv 'NORNIR_REPO_ROOT_HOST' $NornirRepoRoot
 Set-EnvFileDefault $layout.HostEnv 'VIKING_REPO_ROOT_HOST' $VikingRepoRoot
 Set-EnvFileDefault $layout.HostEnv 'NORNIR_DOCKER_HOST_STACKS' ($Stacks -join ',')

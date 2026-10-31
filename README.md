@@ -66,5 +66,6 @@ Some stacks still run from source checkouts (`NORNIR_REPO_ROOT_HOST`, `VIKING_RE
   stacks, settings, images or guides.
 - [New segmentation host on its own MAC and IP](docs/segmentation-host.md): step by step, including
   the DHCP reservation and the cut-over from the old compute host.
-- Deployment guide (all hosts): https://nornir.github.io/deployment/. It still describes the older
-  `nornir-docker/deploy` layout; use this repo's scripts in its place.
+- Deployment guide (all hosts): https://nornir.github.io/deployment/ (source: nornir `docs/deployment/`). nornir
+  `dev` describes this repo's scripts; the published site follows nornir `master`, so until that merge it may still
+  show the older `nornir-docker/deploy` layout. Use this repo's scripts in its place.

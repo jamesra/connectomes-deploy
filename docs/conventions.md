@@ -112,8 +112,9 @@ Never edit files on a server to work around `-Sync`. The nornir `deploy-connecto
 
 - Guides are step by step and name the exact commands (`docs/segmentation-host.md` is the model), say what to check
   after each step, and give a rollback. Update the README layout table and Docs list when adding a file or guide.
-- The older guide at https://nornir.github.io/deployment/ still describes the `nornir-docker/deploy` layout; this
-  repo supersedes it. When behaviour here changes, say so in any guide that still describes the old way.
+- The deployment guide at https://nornir.github.io/deployment/ is nornir `docs/deployment/`. It describes this repo
+  from nornir `dev` on (published when nornir `master` is updated); `nornir-docker/deploy` is the superseded copy.
+  When behaviour here changes, update those pages and any guide that still describes the old way.
 - Commit messages: a short imperative subject naming the feature, then a body that says what changed and **what was
   checked and how** (which hosts or scratch layouts, which cases). Commit finished work at once; push only when
   asked.

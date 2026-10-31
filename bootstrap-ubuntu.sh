@@ -194,7 +194,8 @@ Done. Log out and back in (docker group), then as $DEPLOY_USER:
   git clone https://github.com/jamesra/connectomes-deploy.git $DEPLOY_ROOT
   # Source checkouts, until every image is published:
   git clone --recurse-submodules https://github.com/jamesra/nornir.git $SRC_ROOT/nornir     # compute host
-  git clone --recurse-submodules https://github.com/jamesra/Viking.git $SRC_ROOT/Viking     # Viking hosts
+  git clone https://github.com/jamesra/Viking.git $SRC_ROOT/Viking                         # Viking hosts
+  git -C $SRC_ROOT/Viking submodule update --init gRPC_Protos     # only this one; the others are not needed
   pwsh $DEPLOY_ROOT/Initialize-DockerHost.ps1 -Root $LAYOUT_ROOT -Role <compute|web> -NornirRepoRoot $SRC_ROOT/nornir -VikingRepoRoot $SRC_ROOT/Viking -SetUserEnv
   (web host: omit -NornirRepoRoot)
 EOF
