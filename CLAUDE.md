@@ -11,6 +11,9 @@ Read before editing:
   and secrets layers, opt-in overlays, image pins, rollout procedure, scripts, docs, commit messages).
 - [docs/segmentation-host.md](docs/segmentation-host.md): worked example of a guide.
 - Operator procedure: nornir `deploy-connectomes` skill (`D:\src\git\nornir\.cursor\skills\deploy-connectomes`).
+- Bringing up a NEW compute host from scratch (nornir-build, segmentation, certificates), with the mistakes that cost
+  time: skill `deploy-compute-host` ([.cursor/skills/deploy-compute-host/SKILL.md](.cursor/skills/deploy-compute-host/SKILL.md)).
+  It ends by notifying the host's bot (for opr-marc-build2, the `Build2 RC` session) when one is available.
 
 Essentials:
 
