@@ -34,7 +34,7 @@
         }
         'nornir-dashboard' = @{
             Engine         = 'script'
-            Description    = 'Mosquitto broker + nornir build dashboard (http://127.0.0.1:8087)'
+            Description    = 'Mosquitto broker + nornir build dashboard (http://<NORNIR_DASHBOARD_BIND_HOST>:<NORNIR_DASHBOARD_HOST_PORT>, default 127.0.0.1:80)'
             RepoRootVar    = 'NORNIR_REPO_ROOT_HOST'
             Script         = 'nornir-docker/start-dashboard.ps1'
             ComposeProject = 'nornir-dashboard'
@@ -50,9 +50,9 @@
             Required       = @()
             GeneratedSecrets = @('NORNIR_DASHBOARD_TOKEN')
             Secrets        = @()
-            HealthUrl      = 'http://127.0.0.1:8087/'
+            HealthUrl      = 'http://{NORNIR_DASHBOARD_BIND_HOST}:{NORNIR_DASHBOARD_HOST_PORT}/'
             Images         = @('nornir-dashboard:latest', 'eclipse-mosquitto:2')
-            Ports          = @(1883, 8087)
+            Ports          = @(1883, 80)
             Os             = @('linux', 'windows')
         }
     }
