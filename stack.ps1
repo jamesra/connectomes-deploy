@@ -450,6 +450,16 @@ function Test-ContainerState {
     return "$s".Trim()
 }
 
+function Remove-ScriptContainer {
+    # Stop gracefully before removing: 'rm -f' SIGKILLs at once, and a nornir-build container with ~130
+    # processes, GPU contexts and CIFS mounts took ~5 s longer to exit than dockerd waits, so the first
+    # rm failed with 'did not receive an exit event' on every rebuild (srv, 2026-11).
+    param([string]$Name)
+    if ((Test-ContainerState $Name) -eq 'absent') { return }
+    Invoke-Docker -Arguments @('stop', '-t', '30', $Name)
+    Invoke-Docker -Arguments @('rm', '-f', $Name)
+}
+
 function Invoke-ScriptStack {
     param([hashtable]$Entry, [string]$Act)
     $envMap = Get-StackEnvironment -Entry $Entry -Root $Root
@@ -471,7 +481,7 @@ function Invoke-ScriptStack {
         $hasArgs = $Entry.ActionArgs.ContainsKey($Act)
     }
     if ($name -and $Act -eq 'rebuild') {
-        if ((Test-ContainerState $name) -ne 'absent') { Invoke-Docker -Arguments @('rm', '-f', $name) }
+        Remove-ScriptContainer $name
         $Act = 'up'; $hasArgs = $true
     }
     if ($hasArgs) {
@@ -484,7 +494,7 @@ function Invoke-ScriptStack {
     }
     if ($name) {
         switch ($Act) {
-            'down' { Invoke-Docker -Arguments @('rm', '-f', $name); return }
+            'down' { Remove-ScriptContainer $name; return }
             'logs' { Invoke-Docker -Arguments (@('logs', '--tail', "$Tail") + $(if ($Follow) { @('-f') } else { @() }) + @($name)); return }
             { $_ -in 'ps', 'status' } { Invoke-Docker -Arguments @('ps', '-a', '--filter', "name=^/$name$"); return }
             'exec' { Invoke-Docker -Arguments (@('exec', '-it', $name) + $Rest); return }
