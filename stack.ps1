@@ -575,6 +575,13 @@ function Invoke-Doctor {
         if (Test-Path -LiteralPath $p) { Write-Check OK "$d/ exists" } else { Write-Check FAIL "$p missing (run Initialize-DockerHost.ps1)" }
     }
     if (Test-Path -LiteralPath $script:Layout.HostEnv) { Write-Check OK "host.env present" } else { Write-Check FAIL "$($script:Layout.HostEnv) missing (copy host/example.host.env)" }
+    # Viking's master branch holds only LICENSE; every viking-* stack is defined on dev.
+    $viking = @($script:RegistryReport) | Where-Object { $_.Var -eq 'VIKING_REPO_ROOT_HOST' -and $_.Root -and (Test-Path -LiteralPath $_.Root) } | Select-Object -First 1
+    if ($viking -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        $branch = "$(& git -C $viking.Root rev-parse --abbrev-ref HEAD 2>$null)".Trim()
+        if ($branch -eq 'dev') { Write-Check OK "Viking checkout on dev ($($viking.Root))" }
+        else { Write-Check WARN "Viking checkout $($viking.Root) is on '$branch', not dev: git -C '$($viking.Root)' checkout dev" }
+    }
 
     $dv = $null
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -644,6 +651,35 @@ function Invoke-Doctor {
                 Write-Check OK "DNS $n -> $($ips -join ', ')"
             }
             catch { Write-Check WARN "DNS $n does not resolve yet" }
+        }
+    }
+
+    if ($stacks -contains 'viking-proxy' -and $script:Registry['viking-proxy']) {
+        # Upstreams on other hosts: explicit VIKING_UPSTREAM_*, the compute host's default ports, and models.d maps.
+        $envMap = Get-StackEnvironment -Entry $script:Registry['viking-proxy'] -Root $Root
+        $upstreams = [System.Collections.Generic.List[string]]::new()
+        foreach ($k in $envMap.Keys) { if ($k -like 'VIKING_UPSTREAM_*' -and $envMap[$k]) { $upstreams.Add($envMap[$k]) } }
+        if ($envMap['VIKING_COMPUTE_HOST']) {
+            foreach ($k in 'SEGMENTATION', 'SEGMENTATIONDEMO') {
+                if (-not $envMap["VIKING_UPSTREAM_$k"]) { $upstreams.Add("$($envMap['VIKING_COMPUTE_HOST']):$(if ($k -eq 'SEGMENTATION') { 40443 } else { 40444 })") }
+            }
+        }
+        $mapDir = Join-DockerHostPath (Get-StackDirs -Stack 'viking-proxy' -Root $Root).Data 'models.d'
+        foreach ($f in @(Get-ChildItem -LiteralPath $mapDir -Filter '*.map' -File -ErrorAction SilentlyContinue)) {
+            foreach ($line in (Get-Content -LiteralPath $f.FullName)) {
+                if ($line -match '^\s*[^#\s]\S*\s+(\S+?);') { $upstreams.Add($Matches[1]) }
+            }
+        }
+        foreach ($u in ($upstreams | Select-Object -Unique)) {
+            if ($u -notmatch '^(?<h>[^:]+):(?<p>\d+)$' -or $Matches.h -in 'host.docker.internal', '127.0.0.1', 'localhost') { continue }
+            $h = $Matches.h; $p = [int]$Matches.p
+            $tcp = [System.Net.Sockets.TcpClient]::new()
+            try {
+                if ($tcp.ConnectAsync($h, $p).Wait(3000)) { Write-Check OK "[viking-proxy] upstream $u reachable" }
+                else { Write-Check WARN "[viking-proxy] upstream $u did not answer within 3 s (route or ACL from this host, or the service is down)" }
+            }
+            catch { Write-Check WARN "[viking-proxy] upstream ${u}: $($_.Exception.GetBaseException().Message)" }
+            finally { $tcp.Dispose() }
         }
     }
 

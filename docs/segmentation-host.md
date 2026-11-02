@@ -47,8 +47,13 @@ Ask IT (one ticket) for:
 1. A DHCP reservation of an IP for `<MAC>`, with the hostname you want registered.
 2. The switch port of `<newhost>` to allow a second MAC address (port security): the host's NIC and
    the container both use it.
-3. Network ACLs: inbound TCP 443 to `<IP>` from the web host (`viking-proxy`); outbound from `<IP>`
-   to the identity and websvc hosts if the server reads local tilesets.
+3. Routing and network ACLs from the web host's subnet (not only its IP) to `<IP>`'s subnet, with
+   inbound TCP 443 to `<IP>` from the web host (`viking-proxy`); outbound from `<IP>` to the identity
+   and websvc hosts if the server reads local tilesets. The two subnets may not route to each other
+   at all by default: ping and SSH from the web host to `<newhost>` failing is the sign.
+
+Once it is done, check from the web host with `nc -vz <IP> 443` (after step 6), or run `stack.ps1
+doctor` there: it tries every `viking-proxy` upstream on another host.
 
 Note the IP, the subnet (e.g. `10.20.30.0/24`) and the gateway.
 
