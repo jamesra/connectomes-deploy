@@ -60,6 +60,19 @@ Check:
   should be `OK`.
 - Public: `curl -I http://connectomes.pitt.edu/` reaches the proxy (needed for Let's Encrypt HTTP-01).
 
+## Identity on the same VLAN
+
+`stacks/viking-identity/compose.macvlan.yaml` gives `viking-identity` its own IP on the VLAN (HypV1:
+10.227.66.254) by joining the proxy's macvlan network (`viking-proxy_lan`), so start viking-proxy first. Identity
+keeps its bridge as the default route and its published ports. In `Run/viking-identity/viking-identity.run.env`:
+
+```
+STACK_COMPOSE_OVERLAYS=stacks/viking-identity/compose.macvlan.yaml
+IDENTITY_LAN_IP=10.227.66.254
+IDENTITY_MAC_ADDRESS=<MAC>
+IDENTITY_LAN_NETWORK=viking-proxy_lan
+```
+
 ## Rollback
 
 Comment out the `STACK_COMPOSE_OVERLAYS` line and run `stack viking-proxy up`. The proxy goes back to the host's

@@ -1,0 +1,29 @@
+# viking-identity on its own fixed MAC address and IP on the public VLAN, next to viking-proxy
+# (docs/proxy-public-vlan.md). Linux hosts only. Needs Docker Engine 28+ and Compose 2.33+ (gw_priority).
+#
+# Turn it on in Run/viking-identity/viking-identity.run.env:
+#   STACK_COMPOSE_OVERLAYS=stacks/viking-identity/compose.macvlan.yaml
+#   IDENTITY_LAN_IP          the reserved IP (HypV1: 10.227.66.254)
+#   IDENTITY_MAC_ADDRESS     fixed, locally administered (02:..., not 02:42:...), so it never changes on recreate
+#   IDENTITY_LAN_NETWORK     the proxy's macvlan network (default viking-proxy_lan)
+#
+# It joins the macvlan network the viking-proxy overlay created instead of creating a second one: Docker refuses
+# two networks with the same parent and subnet. Start viking-proxy (with its macvlan overlay) first.
+# The bridge network keeps the default route (gw_priority) and the base stack's published ports, so SQL and other
+# internal traffic leaves through the host's own uplink and host.docker.internal upstreams keep working; only
+# same-VLAN peers (the proxy) reach it on IDENTITY_LAN_IP.
+
+services:
+  identity-all-services:
+    networks:
+      identity-network:
+        gw_priority: 100
+      lan:
+        ipv4_address: ${IDENTITY_LAN_IP:?IDENTITY_LAN_IP must be set for the macvlan overlay}
+        mac_address: ${IDENTITY_MAC_ADDRESS:?IDENTITY_MAC_ADDRESS must be set for the macvlan overlay}
+        gw_priority: 0
+
+networks:
+  lan:
+    name: ${IDENTITY_LAN_NETWORK:-viking-proxy_lan}
+    external: true
