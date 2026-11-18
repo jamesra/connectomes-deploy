@@ -1,0 +1,42 @@
+# viking-proxy on its own MAC address and IP on the public VLAN (Docker macvlan), while the host itself
+# stays on another VLAN. Linux hosts only: Docker Desktop's VM hides macvlan containers from the LAN.
+# Needs Docker Engine 28+ and Compose 2.33+ (gw_priority).
+#
+# Turn it on in Run/viking-proxy/viking-proxy.run.env:
+#   STACK_COMPOSE_OVERLAYS=stacks/viking-proxy/compose.macvlan.yaml
+#   PROXY_MACVLAN_PARENT=external.1811   host NIC, or <nic>.<vlan id>: Docker creates the 802.1Q
+#                                         sub-interface when the name has a dot and it is missing
+#   PROXY_LAN_SUBNET=10.227.66.224/27
+#   PROXY_LAN_GATEWAY=10.227.66.225
+#   PROXY_LAN_IP                          the IP IT reserved (connectomes.pitt.edu: 10.227.66.253)
+#   PROXY_MAC_ADDRESS                     locally administered (02:..., not 02:42:...), the MAC IT registered
+#
+# The proxy keeps its bridge network, so services on this host stay reachable as host.docker.internal.
+# The default route moves to the VLAN (gw_priority), so public clients' replies and remote upstreams
+# (the segmentation server) leave through the VLAN gateway, not the host's own uplink.
+# 80/443 are published only on 127.0.0.1, for the host's health check; the public entry is PROXY_LAN_IP.
+# macvlan traffic bypasses the host firewall (ufw, DOCKER-USER), and the host cannot reach PROXY_LAN_IP:
+# test from another machine. `stack.ps1 doctor` probes upstreams from inside the proxy container.
+
+services:
+  viking-proxy:
+    ports: !override
+      - "127.0.0.1:${PROXY_HTTP_PORT:-80}:80"
+      - "127.0.0.1:${PROXY_HTTPS_PORT:-443}:443"
+    networks:
+      default:
+        gw_priority: 0
+      lan:
+        ipv4_address: ${PROXY_LAN_IP:?PROXY_LAN_IP (the reserved IP) must be set for the macvlan overlay}
+        mac_address: ${PROXY_MAC_ADDRESS:?PROXY_MAC_ADDRESS (the MAC IT registered) must be set for the macvlan overlay}
+        gw_priority: 100
+
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: ${PROXY_MACVLAN_PARENT:?PROXY_MACVLAN_PARENT (host NIC or <nic>.<vlan>) must be set for the macvlan overlay}
+    ipam:
+      config:
+        - subnet: ${PROXY_LAN_SUBNET:?PROXY_LAN_SUBNET must be set for the macvlan overlay}
+          gateway: ${PROXY_LAN_GATEWAY:?PROXY_LAN_GATEWAY must be set for the macvlan overlay}

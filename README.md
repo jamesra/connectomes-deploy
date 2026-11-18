@@ -64,6 +64,8 @@ Some stacks still run from source checkouts (`NORNIR_REPO_ROOT_HOST`, `VIKING_RE
 
 - [Goal and conventions](docs/conventions.md): what this repo is for and the conventions to keep when adding
   stacks, settings, images or guides.
+- [viking-proxy on the public VLAN](docs/proxy-public-vlan.md): its own MAC and IP on the public VLAN
+  (`stacks/viking-proxy/compose.macvlan.yaml`), the IT ticket, the switch-over and the rollback.
 - [New segmentation host on its own MAC and IP](docs/segmentation-host.md): step by step, including
   the DHCP reservation and the cut-over from the old compute host.
 - Deployment guide (all hosts): https://nornir.github.io/deployment/ (source: nornir `docs/deployment/`). nornir

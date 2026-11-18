@@ -670,9 +670,30 @@ function Invoke-Doctor {
                 if ($line -match '^\s*[^#\s]\S*\s+(\S+?);') { $upstreams.Add($Matches[1]) }
             }
         }
+        # With no IIS host and no explicit upstream, websvc and the default route fall back to host.docker.internal:443,
+        # which is the proxy itself: requests loop.
+        foreach ($k in 'WEBSVC', 'DEFAULT') {
+            if (-not $envMap['VIKING_IIS_HOST'] -and -not $envMap["VIKING_UPSTREAM_$k"]) {
+                Write-Check WARN "[viking-proxy] neither VIKING_IIS_HOST nor VIKING_UPSTREAM_$k is set: $($k.ToLower()) falls back to the proxy itself and loops (set VIKING_UPSTREAM_$k, e.g. 127.0.0.1:9 to refuse)"
+            }
+        }
+        # On the macvlan overlay the proxy reaches upstreams through its own VLAN, not the host's uplink, so probe from
+        # inside the running container (bash /dev/tcp; the nginx image has no nc).
+        $proxyContainer = $null
+        if (($envMap['STACK_COMPOSE_OVERLAYS'] -split ',') -match 'compose\.macvlan\.yaml$') {
+            $proxyContainer = (& docker ps --filter 'label=com.docker.compose.service=viking-proxy' --format '{{.Names}}' 2>$null |
+                    Select-Object -First 1)
+            if (-not $proxyContainer) { Write-Check WARN '[viking-proxy] macvlan overlay on, but no running proxy container to probe upstreams from' }
+        }
         foreach ($u in ($upstreams | Select-Object -Unique)) {
             if ($u -notmatch '^(?<h>[^:]+):(?<p>\d+)$' -or $Matches.h -in 'host.docker.internal', '127.0.0.1', 'localhost') { continue }
             $h = $Matches.h; $p = [int]$Matches.p
+            if ($proxyContainer) {
+                & docker exec $proxyContainer timeout 3 bash -c "exec 3<>/dev/tcp/$h/$p" 2>$null
+                if ($LASTEXITCODE -eq 0) { Write-Check OK "[viking-proxy] upstream $u reachable from $proxyContainer" }
+                else { Write-Check WARN "[viking-proxy] upstream $u did not answer within 3 s from $proxyContainer (route or ACL on the proxy's VLAN, or the service is down)" }
+                continue
+            }
             $tcp = [System.Net.Sockets.TcpClient]::new()
             try {
                 if ($tcp.ConnectAsync($h, $p).Wait(3000)) { Write-Check OK "[viking-proxy] upstream $u reachable" }
