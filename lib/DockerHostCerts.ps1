@@ -271,6 +271,15 @@ function Send-DockerHostCertificate {
     Write-Host "[$Name] scp $CertName -> $remoteDir"
     & scp @scpArgs
     if ($LASTEXITCODE -ne 0) { throw "[$Name] scp failed" }
+    # Optional CertKeyGid on the target: a service there runs as another user (viking-segmentation: uid/gid 1001),
+    # so make privkey.pem owner deploy user, group CertKeyGid, mode 640. The deploy user is usually not in that
+    # group, so a throwaway container does the chown.
+    if ($Target.Os -ne 'windows' -and $Target.CertKeyGid) {
+        $gid = [int]$Target.CertKeyGid
+        $fix = "docker run --rm -v '$remoteDir':/c alpine:3.20 sh -c 'chown `$(id -u):$gid /c/privkey.pem && chmod 640 /c/privkey.pem'"
+        Invoke-Ssh -Target $Target -Command $fix
+        if ($script:Rc -ne 0) { throw "[$Name] could not set privkey.pem to group $gid, mode 640" }
+    }
     $reloadVerb = if ($Target.Os -eq 'windows') { 'install-iis' } else { 'reload' }
     Invoke-Ssh -Target $Target -Command (Get-RemotePwshCommand -Target $Target -StackArgs @('certs', $reloadVerb))
     if ($script:Rc -ne 0) { Write-Warning "[$Name] certs $reloadVerb exited $($script:Rc)" }
