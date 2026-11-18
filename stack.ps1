@@ -296,6 +296,18 @@ function Test-StackHealth {
     param([hashtable]$Entry, [hashtable]$EnvMap)
     if (-not $Entry.HealthUrl) { return $true }
     $url = Expand-StackTemplate -Text $Entry.HealthUrl -Env $EnvMap
+    # STACK_HEALTH_EXEC_SERVICE (run env, optional): check the URL from inside that compose service's container, for
+    # stacks whose ports the host cannot reach (a macvlan overlay moves the gateway endpoint, and Docker then drops
+    # the host port publish).
+    $svc = $EnvMap['STACK_HEALTH_EXEC_SERVICE']
+    if ($svc) {
+        $c = & docker ps --filter "label=com.docker.compose.service=$svc" --format '{{.Names}}' 2>$null | Select-Object -First 1
+        if (-not $c) { Write-Host "  health: no running container for service $svc" -ForegroundColor Red; return $false }
+        $code = (& docker exec $c curl -ksS -o /dev/null -m 8 -w '%{http_code}' $url 2>$null)
+        $ok = $LASTEXITCODE -eq 0 -and [int]"0$code" -gt 0 -and [int]$code -lt 500
+        Write-Host ("  health {0} (in {1}) -> {2}" -f $url, $c, $code) -ForegroundColor ($(if ($ok) { 'Green' } else { 'Red' }))
+        return $ok
+    }
     try {
         $r = Invoke-WebRequest -Uri $url -SkipCertificateCheck -TimeoutSec 8 -MaximumRedirection 0 -SkipHttpErrorCheck
         $ok = $r.StatusCode -lt 500

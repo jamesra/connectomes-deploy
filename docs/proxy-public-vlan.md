@@ -8,7 +8,8 @@ What you end up with:
 
 - `viking-proxy` answering on `<IP>:80/443` on the public VLAN, with its default route through that VLAN's gateway,
   so public replies and remote upstreams (segmentation) use it.
-- 80/443 also on the host's `127.0.0.1`, for the health check. The host's own address no longer serves the proxy.
+- Nothing published on the host (Docker publishes only on the gateway endpoint, which is now the macvlan). The
+  health check runs inside the container. The host's own address no longer serves the proxy.
 - The proxy's bridge network kept, so stacks on the same host stay reachable as `host.docker.internal`.
 
 Needs Docker Engine 28+ and Compose 2.33+ (`gw_priority`).
@@ -37,6 +38,7 @@ PROXY_LAN_SUBNET=10.227.66.224/27
 PROXY_LAN_GATEWAY=10.227.66.225
 PROXY_LAN_IP=10.227.66.253
 PROXY_MAC_ADDRESS=<MAC>
+STACK_HEALTH_EXEC_SERVICE=viking-proxy
 ```
 
 `PROXY_MACVLAN_PARENT` is a host NIC or `<nic>.<vlan id>`; Docker creates the 802.1Q sub-interface when it is
