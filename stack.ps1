@@ -654,6 +654,8 @@ function Invoke-Doctor {
     if ($needsTls) {
         $envMap = Get-StackEnvironment -Entry $script:Registry[@($stacks | Where-Object { $script:Registry.Contains($_) })[0]] -Root $Root
         $names = @((Get-VikingHostnameDefaults -Env $envMap).Values)
+        # Same rule as `certs status`: TLS_HOSTNAMES, when set, is the list this host's certificate must cover.
+        if ($envMap['TLS_HOSTNAMES']) { $names = @($envMap['TLS_HOSTNAMES'] -split '[,\s]+' | Where-Object { $_ }) }
         foreach ($c in (Test-DockerHostCertificate -CertsDir $script:Layout.Certs -CertName $envMap['TLS_CERT_NAME'] -Hostnames $names)) {
             Write-Check $c.Status $c.Message
         }
