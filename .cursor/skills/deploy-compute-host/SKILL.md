@@ -34,6 +34,9 @@ Commands run on the new host as the deploy user, never with `sudo stack` (it mak
    `/srv/src/nornir`; Viking (`dev`) to `/srv/src/Viking`, then ONLY
    `git -C /srv/src/Viking submodule update --init gRPC_Protos` (the image build needs it; the NetTopologySuite
    submodules are not needed and may not resolve). Check `ls /srv/src/Viking/gRPC_Protos/Common`.
+   Sam2Trainer (`master`) with submodules to `/srv/src/Sam2Trainer` (the segmentation server, stack
+   `viking-segmentation`, moved there from Viking on 2026-11-20), and set `SAM2TRAINER_REPO_ROOT_HOST=/srv/src/Sam2Trainer`
+   in `host.env`. Check `ls /srv/src/Sam2Trainer/gRPC_Protos/Common`.
 3. `git pull --recurse-submodules` fetches submodules but does not move them. Update `nornir-docker` itself
    (`checkout main && pull --ff-only`) or `submodule update --init`. Use `stack list` to see which registries load.
 
