@@ -7,7 +7,7 @@
   Solves "every service starts differently, and remote deploys are manual": stack.ps1 reads
   the stack registries (this repo's stacks.psd1, plus the source-repo registries named by
   STACK_EXTRA_REGISTRIES in host.env, by default <Viking>/deploy/stacks.psd1 and
-  <nornir>/nornir-docker/dev-stacks.psd1), merges the machine-local env files from the host
+  <nornir>/nornir-docker/dev-stacks.psd1 and <Sam2Trainer>/deploy/stacks.psd1), merges the machine-local env files from the host
   layout, and runs the right engine:
 
     compose stacks  docker compose -p <stack> --env-file host.env ... --env-file <stack>.run.env -f ...

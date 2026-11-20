@@ -21,7 +21,9 @@ $script:DeployRepoRoot = Split-Path -Parent $PSScriptRoot
 # Entries are <RepoRootVar>:<registry path relative to that repo>; missing files are skipped.
 $script:DefaultExtraRegistries = @(
     'VIKING_REPO_ROOT_HOST:deploy/stacks.psd1',
-    'NORNIR_REPO_ROOT_HOST:nornir-docker/dev-stacks.psd1'
+    'NORNIR_REPO_ROOT_HOST:nornir-docker/dev-stacks.psd1',
+    # The segmentation server (stack viking-segmentation) moved from Viking to Sam2Trainer on 2026-11-20.
+    'SAM2TRAINER_REPO_ROOT_HOST:deploy/stacks.psd1'
 )
 
 function Test-NornirWindowsHost {
@@ -237,7 +239,12 @@ function Get-StackRegistryHelp {
         }
     }
     $viking = @($script:RegistryReport) | Where-Object { $_.Var -eq 'VIKING_REPO_ROOT_HOST' } | Select-Object -First 1
-    if ($Key -like 'viking-*' -and $viking -and $viking.Status -ne 'loaded') {
+    if ($Key -eq 'viking-segmentation') {
+        $lines.Add("'viking-segmentation' is defined in the Sam2Trainer checkout's deploy/stacks.psd1 (branch master) since 2026-11-20. Fix:")
+        $lines.Add("  git clone --recurse-submodules https://github.com/jamesra/Sam2SegmentationTrainer.git /srv/src/Sam2Trainer")
+        $lines.Add("  set SAM2TRAINER_REPO_ROOT_HOST=/srv/src/Sam2Trainer in Run/_host/host.env")
+    }
+    elseif ($Key -like 'viking-*' -and $viking -and $viking.Status -ne 'loaded') {
         $lines.Add("'$Key' is a Viking stack, defined in the Viking checkout's deploy/stacks.psd1 (branch dev). Fix:")
         if ($viking.Status -eq 'unset') {
             $lines.Add("  git clone -b dev https://github.com/jamesra/Viking.git /srv/src/Viking   (if you have no checkout)")

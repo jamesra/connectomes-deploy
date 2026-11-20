@@ -1,6 +1,6 @@
 # Stack registry for connectomes-deploy (read by stack.ps1).
 # Source-repo registries with the same schema are added by STACK_EXTRA_REGISTRIES in host.env
-# (default: <Viking>/deploy/stacks.psd1 and <nornir>/nornir-docker/dev-stacks.psd1).
+# (default: <Viking>/deploy/stacks.psd1, <nornir>/nornir-docker/dev-stacks.psd1 and <Sam2Trainer>/deploy/stacks.psd1).
 #
 # Engine:
 #   compose - stack.ps1 runs docker compose -p <key> --env-file ... -f <ComposeFiles> <action>
