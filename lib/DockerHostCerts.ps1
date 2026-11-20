@@ -272,13 +272,15 @@ function Send-DockerHostCertificate {
     & scp @scpArgs
     if ($LASTEXITCODE -ne 0) { throw "[$Name] scp failed" }
     # Optional CertKeyGid on the target: a service there runs as another user (viking-segmentation: uid/gid 1001),
-    # so make privkey.pem owner deploy user, group CertKeyGid, mode 640. The deploy user is usually not in that
-    # group, so a throwaway container does the chown.
+    # so make the files that hold the key (privkey.pem, and cert.pfx, which has no password) owner deploy user, group
+    # CertKeyGid, mode 640. Same rule as the renewer's TLS_KEY_GID (Viking 89fa59b0). The deploy user is usually not
+    # in that group, so a throwaway container does the chown; the uid is the deploy user's, read on the host.
     if ($Target.Os -ne 'windows' -and $Target.CertKeyGid) {
         $gid = [int]$Target.CertKeyGid
-        $fix = "docker run --rm -v '$remoteDir':/c alpine:3.20 sh -c 'chown `$(id -u):$gid /c/privkey.pem && chmod 640 /c/privkey.pem'"
+        $fix = "uid=`$(id -u) && docker run --rm -v '$remoteDir':/c alpine:3.20 sh -c " +
+            "`"for f in /c/privkey.pem /c/cert.pfx; do [ -f \`$f ] || continue; chown `$uid:$gid \`$f && chmod 640 \`$f || exit 1; done`""
         Invoke-Ssh -Target $Target -Command $fix
-        if ($script:Rc -ne 0) { throw "[$Name] could not set privkey.pem to group $gid, mode 640" }
+        if ($script:Rc -ne 0) { throw "[$Name] could not set privkey.pem and cert.pfx to group $gid, mode 640" }
     }
     $reloadVerb = if ($Target.Os -eq 'windows') { 'install-iis' } else { 'reload' }
     Invoke-Ssh -Target $Target -Command (Get-RemotePwshCommand -Target $Target -StackArgs @('certs', $reloadVerb))

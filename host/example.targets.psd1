@@ -20,9 +20,10 @@
                 '5678:127.0.0.1:5678'                             # debugpy (NORNIR_DEBUGPY=1)
             )
             CertPush   = $true                                    # `stack.ps1 certs push` (run on web) copies the cert here
-            #CertKeyGid = 1001                                    # OPTIONAL: after a push, privkey.pem is owner deploy
-                                                                  # user, this group, mode 640 (viking-segmentation runs
-                                                                  # as 1001). Default: the key keeps its own mode.
+            #CertKeyGid = 1001                                    # OPTIONAL: after a push, privkey.pem and cert.pfx are
+                                                                  # owner deploy user, this group, mode 640 (viking-
+                                                                  # segmentation runs as 1001; same as TLS_KEY_GID).
+                                                                  # Default: the files keep their own mode.
         }
         web = @{
             Ssh        = 'deploy@web.connectomes.pitt.edu'
