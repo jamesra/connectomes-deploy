@@ -139,6 +139,8 @@ Pushing overwrites the `<tag>-<VERSION>` tags unless `VERSION` was bumped. Ask b
 | `chmod ... Operation not permitted` on a .cred | file owned by someone else | `sudo chown $USER:$USER`, then chmod |
 | all SSH sessions drop, login refused afterwards | reboot, SSSD not ready | console; wait; use the BMC |
 | `Fetching: command not found` | pasted shell comments ran as commands | paste commands without trailing comments |
+| CIFS mount `error 95` | `seal` set but SMB encryption off on the NAS | drop `seal` from that row |
+| share listed but empty after an IP change | tsv read only at container start, or first mount raced | rebuild at idle; retry once (skill `operate-build-host`) |
 
 ## Must not
 

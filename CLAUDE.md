@@ -14,6 +14,8 @@ Read before editing:
 - Bringing up a NEW compute host from scratch (nornir-build, segmentation, certificates), with the mistakes that cost
   time: skill `deploy-compute-host` ([.cursor/skills/deploy-compute-host/SKILL.md](.cursor/skills/deploy-compute-host/SKILL.md)).
   It ends by notifying the host's bot (for opr-marc-build2, the `Build2 RC` session) when one is available.
+- Operating a running build host (after a reboot, a NAS IP or SMB-encryption change, an image install): skill
+  `operate-build-host` ([.cursor/skills/operate-build-host/SKILL.md](.cursor/skills/operate-build-host/SKILL.md)).
 
 Essentials:
 
