@@ -16,6 +16,9 @@ Each rule comes from a mistake that cost time on srv in November 2026.
   in a second tmux session. Done-check: `! docker exec nornir-build pgrep -f '<Vol> <Pipeline>' >/dev/null`.
   Why: a Bash `run_in_background` waiter dies at 2 h, but the job doesn't, so you lose the notice.
 - A host reboot kills tmux watchers. Re-arm them after any reboot notice from Host.
+- Give watch_job.sh your session's local title as other local sessions list it (e.g. `Build2 RC RC1`), not the
+  `srv-NN` name; the headless notifier only finds local titles. Test it once with `notify_session.sh '<title>' test`
+  and check the result in `Logs/nornir-build/notify.log`. Why: on 2026-11-21 every failure notice was lost.
 
 ## Shared nornir-build container and GPU
 - Before installing an image, list the python processes in the container (`ps -eo pid,etime,args`). The owner is in
