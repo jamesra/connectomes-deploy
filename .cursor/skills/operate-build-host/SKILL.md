@@ -41,4 +41,7 @@ Each rule: what to do, then why.
 ## Agent shells
 - `docker exec <container> bash -c '...'`, never `stack exec` (forces `-it`) or `bash -lc` (a login shell resets
   PATH and loses `/root/scripts`, `/opt/venv/bin`).
+- `tail -n 1` and `head -n N`, not `tail -1`: coreutils on srv is uutils, which rejects the obsolete form.
+- Never `pkill -f <pattern>` from a shell whose command line contains the pattern: it kills that shell (exit 143/144).
+  Kill by PID, or bracket one letter (`pgrep -f 'resource_trac[k]er'`).
 - Yes/no checks use `grep -q`; `$(... | grep -c x || echo 0)` yields "0\n0" on no match.

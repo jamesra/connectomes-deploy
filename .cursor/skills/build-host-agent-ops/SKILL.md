@@ -16,11 +16,21 @@ Each rule comes from a mistake that cost time on srv in November 2026.
   in a second tmux session. Done-check: `! docker exec nornir-build pgrep -f '<Vol> <Pipeline>' >/dev/null`.
   Why: a Bash `run_in_background` waiter dies at 2 h, but the job doesn't, so you lose the notice.
 - A host reboot kills tmux watchers. Re-arm them after any reboot notice from Host.
+- Keep each long job's exact launch command in a file next to its log (the runner script plus a one-line
+  `restart.txt`). Why: restarts after a failure or an image install otherwise mean searching the transcript.
+- A done-check must not count markers (`EXIT 0`) in logs appended across runs; use a process check
+  (`! pgrep -f <runner>`) or a fresh log per run. Why: an old marker made the watcher report "done" at once.
+- Killing a tmux runner's bash does not stop the `docker exec` batch it started. Let the batch finish and record it
+  by hand, or kill the in-container PID. A lane that claims work before running must remove its claim when its
+  batch is interrupted, or that work is silently skipped.
 
 ## Shared nornir-build container and GPU
 - Before installing an image, list the python processes in the container (`ps -eo pid,etime,args`). The owner is in
   the run id (`agent-<Vol>-...`). Ask the owner for its batch boundary; usually one session installs for everyone.
   Why: a rebuild kills every process in the container.
+- Orphaned python forkserver trees (PPID 1, 0% CPU) stay behind after finished or killed runs and make
+  `install_image.sh` abort "busy" (older copies showed an empty list). Check they're idle in `top`, then `kill -9` the
+  roots and their children by PID.
 - Before a CuPy run, check `nvidia-smi`. If another session holds most of the GPU, use `-computational_library numpy`
   or set `-GpuWorkers`, and tell that session. Why: AssembleTiles and StosBrute both died with CuPy out-of-memory
   errors when sharing the GPU.
