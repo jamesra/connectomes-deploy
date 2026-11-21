@@ -16,6 +16,10 @@ Read before editing:
   It ends by notifying the host's bot (for opr-marc-build2, the `Build2 RC` session) when one is available.
 - Operating a running build host (after a reboot, a NAS IP or SMB-encryption change, an image install): skill
   `operate-build-host` ([.cursor/skills/operate-build-host/SKILL.md](.cursor/skills/operate-build-host/SKILL.md)).
+- Agent habits on a build host (tmux jobs and watchers, image installs shared between sessions, GPU sharing, pipeline
+  output checks): skill `build-host-agent-ops` ([.cursor/skills/build-host-agent-ops/SKILL.md](.cursor/skills/build-host-agent-ops/SKILL.md)).
+- Operating the web host HypV1 (Pitt load balancer, testing proxied names, key permissions, CertiNext, image updates):
+  skill `operate-web-host` ([.cursor/skills/operate-web-host/SKILL.md](.cursor/skills/operate-web-host/SKILL.md)).
 
 Essentials:
 
